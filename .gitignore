@@ -7,6 +7,5 @@ npm-debug.log*
 Thumbs.db
 .prd
 telemetry-id
-*.vrm
 
 .code-search/
