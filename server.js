@@ -23,7 +23,8 @@ const TTS_DIR = path.join(__dirname, 'models', 'tts')
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')))
 app.get('/client.js', (req, res) => res.sendFile(path.join(__dirname, 'client.js')))
-app.get('/Cleetus.vrm', (req, res) => res.sendFile(path.join(__dirname, '../spawnpoint/apps/tps-game/Cleetus.vrm')))
+app.get('/Cleetus.vrm', (req, res) => res.sendFile(path.join(__dirname, 'models/Cleetus.vrm')))
+app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')))
 
 const SAMPLE_RATE = 24000
 const A2F_SAMPLE_RATE = 16000

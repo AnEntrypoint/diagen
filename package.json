@@ -11,9 +11,11 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@pixiv/three-vrm": "^3.4.5",
     "audio2afan": "^1.0.1",
     "express": "^5.2.1",
     "sttttsmodels": "^1.0.4",
+    "three": "^0.182.0",
     "webtalk": "^1.0.0"
   }
 }
