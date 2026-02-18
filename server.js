@@ -198,11 +198,31 @@ app.post('/api/generate', async (req, res) => {
     }
     
     const fps = 30
-    const frames = results.map(r => {
+    const audioDuration = audioFloat.length / SAMPLE_RATE
+    const targetNumFrames = Math.ceil(audioDuration * fps)
+    const samplesPerFrame = A2F_SAMPLE_RATE / fps
+    
+    const frames = []
+    
+    for (let frameIdx = 0; frameIdx < targetNumFrames; frameIdx++) {
+      const samplePos = frameIdx * samplesPerFrame
+      
+      const currIdx = Math.min(Math.floor(samplePos / a2f.bufferOfs), results.length - 1)
+      const nextIdx = Math.min(currIdx + 1, results.length - 1)
+      const t = results.length > 1 ? (samplePos - currIdx * a2f.bufferOfs) / a2f.bufferOfs : 0
+      
+      const curr = results[currIdx]
+      const next = results[nextIdx]
+      
       const frame = {}
-      for (const bs of r.blendshapes) frame[bs.name] = bs.value
-      return frame
-    })
+      for (let k = 0; k < curr.blendshapes.length; k++) {
+        const bsName = curr.blendshapes[k].name
+        const currVal = curr.blendshapes[k].value
+        const nextVal = next.blendshapes.find(b => b.name === bsName)?.value || currVal
+        frame[bsName] = currVal + (nextVal - currVal) * t
+      }
+      frames.push(frame)
+    }
     
     const animBuffer = buildAfan(frames, fps)
     
