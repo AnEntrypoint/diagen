@@ -20,6 +20,8 @@ app.use((req, res, next) => {
 })
 
 const TTS_DIR = path.join(__dirname, 'models', 'tts')
+const CLEETUS_WAV = path.join(__dirname, 'cleetus.wav')
+const CLEETUS_EMB = path.join(__dirname, 'cleetus.emb')
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')))
 app.get('/client.js', (req, res) => res.sendFile(path.join(__dirname, 'client.js')))
@@ -44,6 +46,7 @@ const sessionOpts = {
 let sessions = null
 let stTensors = null
 let a2f = null
+let voiceEmbedding = null
 
 const FLOW_LM_STATE_SHAPES = {}
 for (let i = 0; i < 18; i++) {
@@ -159,6 +162,7 @@ async function loadModels() {
   if (sessions) return sessions
   
   const files = {
+    mimiEncoder: path.join(TTS_DIR, 'mimi_encoder.onnx'),
     textConditioner: path.join(TTS_DIR, 'text_conditioner.onnx'),
     flowLmMain: path.join(TTS_DIR, 'flow_lm_main_int8.onnx'),
     flowLmFlow: path.join(TTS_DIR, 'flow_lm_flow_int8.onnx'),
@@ -167,6 +171,7 @@ async function loadModels() {
   
   console.log('[models] Loading...')
   sessions = {
+    mimiEncoder: await ort.InferenceSession.create(files.mimiEncoder, sessionOpts),
     textConditioner: await ort.InferenceSession.create(files.textConditioner, sessionOpts),
     flowLmMain: await ort.InferenceSession.create(files.flowLmMain, sessionOpts),
     flowLmFlow: await ort.InferenceSession.create(files.flowLmFlow, sessionOpts),
@@ -179,6 +184,7 @@ async function loadModels() {
   await a2f.loadModel(path.join(audio2afanDir, 'model.onnx'))
   
   initStTensors()
+  await loadVoiceEmbedding()
   console.log('[models] Loaded')
   return sessions
 }
@@ -205,6 +211,73 @@ function encodeWAV(float32Data, sampleRate) {
     view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
   }
   return Buffer.from(wavBuf)
+}
+
+function decodeWAV(wavBuffer) {
+  const view = new DataView(wavBuffer.buffer || wavBuffer)
+  const readStr = (o, len) => {
+    let s = ''
+    for (let i = 0; i < len; i++) s += String.fromCharCode(view.getUint8(o + i))
+    return s
+  }
+  if (readStr(0, 4) !== 'RIFF' || readStr(8, 4) !== 'WAVE') {
+    throw new Error('Invalid WAV file')
+  }
+  const sampleRate = view.getUint32(24, true)
+  const bitsPerSample = view.getUint16(34, true)
+  const dataOffset = 44
+  const dataSize = view.getUint32(40, true)
+  const numSamples = dataSize / (bitsPerSample / 8)
+  const float32Data = new Float32Array(numSamples)
+  for (let i = 0; i < numSamples; i++) {
+    const val = view.getInt16(dataOffset + i * 2, true)
+    float32Data[i] = val < 0 ? val / 0x8000 : val / 0x7FFF
+  }
+  return { data: float32Data, sampleRate }
+}
+
+async function encodeVoiceFromWAV(wavPath) {
+  const wavData = fs.readFileSync(wavPath)
+  const { data, sampleRate } = decodeWAV(wavData)
+  let audioData = data
+  if (sampleRate !== SAMPLE_RATE) {
+    audioData = resampleAudio(data, sampleRate, SAMPLE_RATE)
+  }
+  const input = new ort.Tensor('float32', audioData, [1, 1, audioData.length])
+  const result = await sessions.mimiEncoder.run({ audio: input })
+  const emb = result[sessions.mimiEncoder.outputNames[0]]
+  return { data: new Float32Array(emb.data), shape: emb.dims }
+}
+
+async function loadVoiceEmbedding() {
+  if (voiceEmbedding) return voiceEmbedding
+  if (fs.existsSync(CLEETUS_EMB)) {
+    console.log('[voice] Loading cached embedding from', CLEETUS_EMB)
+    const embData = fs.readFileSync(CLEETUS_EMB)
+    const view = new DataView(embData.buffer, embData.byteOffset, embData.byteLength)
+    const numFrames = view.getUint32(0, true)
+    const embDim = view.getUint32(4, true)
+    const data = new Float32Array(embData.buffer, embData.byteOffset + 8, numFrames * embDim)
+    voiceEmbedding = { data: new Float32Array(data), shape: [1, numFrames, embDim] }
+  } else if (fs.existsSync(CLEETUS_WAV)) {
+    console.log('[voice] Encoding voice from', CLEETUS_WAV)
+    voiceEmbedding = await encodeVoiceFromWAV(CLEETUS_WAV)
+    const numFrames = voiceEmbedding.shape[1]
+    const embDim = voiceEmbedding.shape[2]
+    const embBuffer = Buffer.alloc(8 + voiceEmbedding.data.length * 4)
+    embBuffer.writeUInt32LE(numFrames, 0)
+    embBuffer.writeUInt32LE(embDim, 4)
+    const dataView = new DataView(embBuffer.buffer, embBuffer.byteOffset + 8, voiceEmbedding.data.length * 4)
+    for (let i = 0; i < voiceEmbedding.data.length; i++) {
+      dataView.setFloat32(i * 4, voiceEmbedding.data[i], true)
+    }
+    fs.writeFileSync(CLEETUS_EMB, embBuffer)
+    console.log('[voice] Cached embedding to', CLEETUS_EMB)
+  } else {
+    console.warn('[voice] No voice file found, using default')
+    voiceEmbedding = null
+  }
+  return voiceEmbedding
 }
 
 function resampleAudio(float32Data, fromRate, toRate) {
@@ -311,17 +384,30 @@ async function generateTTS(text, prof) {
   }
   prof.end('text_condition')
   
-  prof.start('flow_init')
+  prof.start('voice_condition')
   let flowLmState = initState(s.flowLmMain, FLOW_LM_STATE_SHAPES)
   const emptySeq = new ort.Tensor('float32', new Float32Array(32).fill(NaN), [1, 1, 32])
   
-  const condResult = await s.flowLmMain.run({ sequence: emptySeq, text_embeddings: textEmb, ...flowLmState })
-  const conditioning = condResult['conditioning']
+  if (voiceEmbedding) {
+    const voiceTensor = new ort.Tensor('float32', voiceEmbedding.data, voiceEmbedding.shape)
+    const voiceCondResult = await s.flowLmMain.run({ sequence: emptySeq, text_embeddings: voiceTensor, ...flowLmState })
+    for (let i = 2; i < s.flowLmMain.outputNames.length; i++) {
+      const outputName = s.flowLmMain.outputNames[i]
+      if (outputName.startsWith('out_state_')) {
+        flowLmState[`state_${parseInt(outputName.replace('out_state_', ''))}`] = voiceCondResult[outputName]
+      }
+    }
+  }
+  prof.end('voice_condition')
+  
+  prof.start('flow_init')
+  const textCondResult = await s.flowLmMain.run({ sequence: emptySeq, text_embeddings: textEmb, ...flowLmState })
+  const conditioning = textCondResult['conditioning']
   
   for (let i = 2; i < s.flowLmMain.outputNames.length; i++) {
     const outputName = s.flowLmMain.outputNames[i]
     if (outputName.startsWith('out_state_')) {
-      flowLmState[`state_${parseInt(outputName.replace('out_state_', ''))}`] = condResult[outputName]
+      flowLmState[`state_${parseInt(outputName.replace('out_state_', ''))}`] = textCondResult[outputName]
     }
   }
   prof.end('flow_init')
