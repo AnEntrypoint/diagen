@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diagen - VRM Talking Avatar</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+    #container {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      height: 100vh;
+    }
+    #viewer {
+      position: relative;
+      background: #000;
+    }
+    #viewer canvas {
+      width: 100%;
+      height: 100%;
+    }
+    #sidebar {
+      background: #15151f;
+      border-left: 1px solid #252535;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    h1 {
+      font-size: 18px;
+      color: #00d4aa;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #666;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    .section {
+      background: #1a1a25;
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid #252535;
+    }
+    .section-title {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    textarea {
+      width: 100%;
+      background: #0f0f15;
+      border: 1px solid #303040;
+      border-radius: 6px;
+      padding: 10px;
+      color: #e0e0e0;
+      font-size: 14px;
+      font-family: inherit;
+      min-height: 80px;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #00d4aa;
+    }
+    select {
+      width: 100%;
+      background: #0f0f15;
+      border: 1px solid #303040;
+      border-radius: 6px;
+      padding: 8px;
+      color: #e0e0e0;
+      font-size: 14px;
+    }
+    button {
+      background: #00d4aa;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      color: #0a0a0f;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    button:hover:not(:disabled) {
+      background: #00e6b8;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: #252535;
+      color: #e0e0e0;
+    }
+    button.secondary:hover:not(:disabled) {
+      background: #303045;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+    .controls button {
+      flex: 1;
+    }
+    .status {
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      background: #1a1a25;
+      color: #888;
+    }
+    .status.loading { background: #1a2a35; color: #00d4aa; }
+    .status.error { background: #351a1a; color: #ff6b6b; }
+    .status.ready { background: #1a2f25; color: #00d4aa; }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #00d4aa;
+    }
+    #loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #252535;
+      border-top-color: #00d4aa;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="viewer">
+      <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading VRM...</div>
+      </div>
+    </div>
+    <div id="sidebar">
+      <div>
+        <h1>Diagen</h1>
+        <div class="subtitle">Text-to-Speech + Facial Animation</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Text to Speak</div>
+        <textarea id="text-input" placeholder="Type something for Cleetus to say...">Hello! I'm Cleetus, and I can talk now!</textarea>
+      </div>
+      <div class="section">
+        <div class="section-title">Voice</div>
+        <select id="voice-select">
+          <option value="default">Default Voice</option>
+        </select>
+      </div>
+      <div class="controls">
+        <button id="generate-btn">Generate</button>
+        <button id="stop-btn" class="secondary" disabled>Stop</button>
+      </div>
+      <div id="status" class="status">Ready</div>
+      <div id="timing" style="font-size: 11px; color: #555; padding: 4px 0;"></div>
+      <div style="margin-top: auto; padding-top: 16px; border-top: 1px solid #252535;">
+        <div class="section-title">Controls</div>
+        <div style="font-size: 12px; color: #666; line-height: 1.6;">
+          Drag to rotate<br>
+          Scroll to zoom<br>
+          Right-drag to pan
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="/client.js"></script>
+</body>
+</html>

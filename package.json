@@ -1,0 +1,19 @@
+{
+  "name": "diagen",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "audio2afan": "^1.0.1",
+    "express": "^5.2.1",
+    "sttttsmodels": "^1.0.4",
+    "webtalk": "^1.0.0"
+  }
+}
