@@ -2,8 +2,8 @@ import express from 'express'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { Audio2FaceSDK } from 'audio2afan'
 import { createRequire } from 'module'
+import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 
 const require = createRequire(import.meta.url)
@@ -40,9 +40,10 @@ let voiceEmbedding = null
 async function loadA2F() {
   if (a2f) return a2f
   const audio2afanDir = path.join(__dirname, 'models', 'audio2afan')
-  a2f = new Audio2FaceSDK()
+  a2f = new Audio2FaceCore({ ort })
   await a2f.loadConfigFile(path.join(audio2afanDir, 'config.json'))
   await a2f.loadModel(path.join(audio2afanDir, 'model.onnx'))
+  await a2f.loadSolveData(audio2afanDir)
   console.log('[a2f] Loaded')
   return a2f
 }
@@ -182,44 +183,61 @@ app.post('/api/generate', async (req, res) => {
     // Generate animation
     const audio16k = resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE)
     
-    const results = []
+    const fps = 30
+    const stride = Math.round(A2F_SAMPLE_RATE / fps)
     const bufferLen = a2f.bufferLen
     const bufferOfs = a2f.bufferOfs
+    const predictionDelay = a2f.faceParams?.prediction_delay || 0
+    
+    const results = []
     let lastBs = null
     
-    for (let i = 0; i < audio16k.length - bufferLen; i += bufferOfs) {
-      const chunk = audio16k.slice(i, i + bufferLen)
+    for (let offset = 0; offset + bufferLen <= audio16k.length; offset += stride) {
+      const chunk = audio16k.slice(offset, offset + bufferLen)
       const result = await a2f.runInference(chunk)
       if (result.blendshapes && lastBs) {
         result.blendshapes = a2f.smoothBlendshapes(lastBs, result.blendshapes)
       }
       lastBs = result.blendshapes
-      results.push(result)
+      const centerTime = (offset + bufferOfs) / A2F_SAMPLE_RATE + predictionDelay
+      results.push({
+        time: centerTime,
+        blendshapes: result.blendshapes
+      })
     }
     
-    const fps = 30
     const audioDuration = audioFloat.length / SAMPLE_RATE
     const targetNumFrames = Math.ceil(audioDuration * fps)
-    const samplesPerFrame = A2F_SAMPLE_RATE / fps
-    
     const frames = []
     
     for (let frameIdx = 0; frameIdx < targetNumFrames; frameIdx++) {
-      const samplePos = frameIdx * samplesPerFrame
-      
-      const currIdx = Math.min(Math.floor(samplePos / a2f.bufferOfs), results.length - 1)
-      const nextIdx = Math.min(currIdx + 1, results.length - 1)
-      const t = results.length > 1 ? (samplePos - currIdx * a2f.bufferOfs) / a2f.bufferOfs : 0
-      
-      const curr = results[currIdx]
-      const next = results[nextIdx]
-      
+      const frameTime = frameIdx / fps
       const frame = {}
-      for (let k = 0; k < curr.blendshapes.length; k++) {
-        const bsName = curr.blendshapes[k].name
-        const currVal = curr.blendshapes[k].value
-        const nextVal = next.blendshapes.find(b => b.name === bsName)?.value || currVal
-        frame[bsName] = currVal + (nextVal - currVal) * t
+      
+      if (results.length === 0 || frameTime < results[0].time) {
+        for (let k = 0; k < 52; k++) {
+          frame[ARKIT_NAMES[k]] = 0
+        }
+      } else {
+        let resultIdx = results.findIndex((r, i) => {
+          const next = results[i + 1]
+          if (!next) return true
+          return r.time <= frameTime && next.time > frameTime
+        })
+        
+        if (resultIdx === -1) resultIdx = results.length - 1
+        
+        const curr = results[resultIdx]
+        const next = results[Math.min(resultIdx + 1, results.length - 1)]
+        const t = next !== curr && next.time !== curr.time 
+          ? (frameTime - curr.time) / (next.time - curr.time) 
+          : 0
+        
+        for (let k = 0; k < 52; k++) {
+          const currVal = curr.blendshapes[k].value
+          const nextVal = next.blendshapes[k].value
+          frame[ARKIT_NAMES[k]] = currVal + (nextVal - currVal) * Math.max(0, Math.min(1, t))
+        }
       }
       frames.push(frame)
     }

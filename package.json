@@ -17,6 +17,7 @@
     "express": "^5.2.1",
     "sttttsmodels": "^1.0.4",
     "three": "^0.182.0",
-    "webtalk": "^1.0.6"
+    "webtalk": "^1.0.6",
+    "jszip": "^3.10.1"
   }
 }
