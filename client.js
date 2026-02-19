@@ -115,7 +115,7 @@ function mapEyes(blendshapes) {
   }
 }
 
-function mapEmotionsV1(blendshapes) {
+function mapEmotions(blendshapes) {
   const {
     mouthSmileLeft = 0, mouthSmileRight = 0, mouthFrownLeft = 0, mouthFrownRight = 0,
     browInnerUp = 0, browDownLeft = 0, browDownRight = 0, browOuterUpLeft = 0, browOuterUpRight = 0,
@@ -137,26 +137,39 @@ function mapEmotionsV1(blendshapes) {
     sad: clamp(frown * 0.6 + browDown * 0.3 + (1 - smile) * 0.1),
     angry: clamp(browDown * 0.5 + sneer * 0.3 + frown * 0.2),
     relaxed: clamp((1 - browDown) * 0.5 + smile * 0.3 + cheekPuff * 0.2),
-    surprised: clamp(browUp * 0.6 + wide * 0.3 + jawOpen * 0.1)
+    surprised: clamp(browUp * 0.6 + wide * 0.3 + jawOpen * 0.1),
+    fun: clamp(cheekPuff * 0.7 + smile * 0.3)
   }
 }
 
 class FacialAnimationPlayer {
   constructor(vrm) {
     this.vrm = vrm
-    this.expressionManager = vrm.expressionManager
     this.animation = null
     this.audio = null
     this.isPlaying = false
     this.startTime = 0
     this.availableExpressions = new Set()
     this.lastApplied = new Map()
-    
-    if (this.expressionManager) {
-      this.expressionManager.expressions.forEach(e => {
-        this.availableExpressions.add(e.expressionName)
+    this.morphTargetMeshes = []
+
+    if (vrm.blendShapeProxy) {
+      this.vrmVersion = '0.0'
+      this.blendProxy = vrm.blendShapeProxy
+      const presets = ['A','I','U','E','O','Blink','Blink_L','Blink_R','Joy','Angry','Sorrow','Fun','Neutral','LookUp','LookDown','LookLeft','LookRight']
+      presets.forEach(p => this.availableExpressions.add(p))
+    } else if (vrm.expressionManager) {
+      this.vrmVersion = '1.0'
+      this.expressionManager = vrm.expressionManager
+      vrm.expressionManager.expressions.forEach(e => this.availableExpressions.add(e.expressionName))
+    } else {
+      this.vrmVersion = 'arkit'
+      vrm.scene.traverse(obj => {
+        if (obj.isMesh && obj.morphTargetDictionary) this.morphTargetMeshes.push(obj)
       })
     }
+
+    console.log(`[vrm] Detected VRM ${this.vrmVersion}, expressions:`, [...this.availableExpressions].join(', ') || 'morph targets')
   }
 
   loadAnimation(buffer) {
@@ -206,9 +219,14 @@ class FacialAnimationPlayer {
   }
 
   resetExpressions() {
-    if (!this.expressionManager) return
-    for (const name of this.availableExpressions) {
-      this.expressionManager.setValue(name, 0)
+    if (this.vrmVersion === '0.0') {
+      for (const name of this.availableExpressions) this.blendProxy.setValue(name, 0)
+    } else if (this.vrmVersion === '1.0') {
+      for (const name of this.availableExpressions) this.expressionManager.setValue(name, 0)
+    } else {
+      for (const mesh of this.morphTargetMeshes) {
+        if (mesh.morphTargetInfluences) mesh.morphTargetInfluences.fill(0)
+      }
     }
     this.lastApplied.clear()
   }
@@ -228,37 +246,82 @@ class FacialAnimationPlayer {
   }
 
   applyFrame(blendshapes) {
-    if (!this.expressionManager) return
+    if (this.vrmVersion === '0.0') return this._applyVrm0(blendshapes)
+    if (this.vrmVersion === '1.0') return this._applyVrm1(blendshapes)
+    this._applyArkit(blendshapes)
+  }
 
+  _dominantViseme(visemes) {
+    return Object.entries(visemes).reduce((a, b) => b[1] > a[1] ? b : a, ['', 0])
+  }
+
+  _applyVrm0(blendshapes) {
+    const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
+    const has = (n) => this.availableExpressions.has(n)
+    const set = (n, v) => { if (has(n)) this.blendProxy.setValue(n, clamp(v)) }
+
+    const vrm0Visemes = { A: 0, I: 0, U: 0, E: 0, O: 0 }
+    const v = mapVisemes(blendshapes)
+    vrm0Visemes.A = v.aa; vrm0Visemes.I = v.ih; vrm0Visemes.U = v.ou; vrm0Visemes.E = v.ee; vrm0Visemes.O = v.oh
+    const [dom, domVal] = this._dominantViseme(vrm0Visemes)
+    for (const k of ['A','I','U','E','O']) set(k, k === dom ? domVal : 0)
+
+    const eyes = mapEyes(blendshapes)
+    set('Blink_L', eyes.blinkLeft)
+    set('Blink_R', eyes.blinkRight)
+    set('Blink', eyes.blink)
+    set('LookUp', eyes.lookUp)
+    set('LookDown', eyes.lookDown)
+    set('LookLeft', eyes.lookLeft)
+    set('LookRight', eyes.lookRight)
+
+    const em = mapEmotions(blendshapes)
+    set('Joy', em.happy)
+    set('Sorrow', em.sad)
+    set('Angry', em.angry)
+    set('Fun', em.fun)
+  }
+
+  _applyVrm1(blendshapes) {
     const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
     const values = new Map()
-    const has = (name) => this.availableExpressions.has(name)
-    const set = (name, val) => { if (has(name)) values.set(name, clamp(val)) }
+    const has = (n) => this.availableExpressions.has(n)
+    const set = (n, v) => { if (has(n)) values.set(n, clamp(v)) }
 
-    const visemes = mapVisemes(blendshapes)
-    const dominantViseme = Object.entries(visemes).reduce((a, b) => b[1] > a[1] ? b : a, ['aa', 0])
-    for (const name of ['aa', 'ih', 'ou', 'ee', 'oh']) set(name, name === dominantViseme[0] ? dominantViseme[1] : 0)
+    const v = mapVisemes(blendshapes)
+    const [dom, domVal] = this._dominantViseme(v)
+    for (const k of ['aa','ih','ou','ee','oh']) set(k, k === dom ? domVal : 0)
 
     const eyes = mapEyes(blendshapes)
     set('blinkLeft', eyes.blinkLeft)
     set('blinkRight', eyes.blinkRight)
+    set('blink', eyes.blink)
+    set('lookUp', eyes.lookUp)
+    set('lookDown', eyes.lookDown)
+    set('lookLeft', eyes.lookLeft)
+    set('lookRight', eyes.lookRight)
 
-    const emotions = mapEmotionsV1(blendshapes)
-    set('happy', emotions.happy)
-    set('sad', emotions.sad)
-    set('angry', emotions.angry)
-    set('relaxed', emotions.relaxed)
-    set('surprised', emotions.surprised)
+    const em = mapEmotions(blendshapes)
+    set('happy', em.happy)
+    set('sad', em.sad)
+    set('angry', em.angry)
+    set('relaxed', em.relaxed)
+    set('surprised', em.surprised)
 
     for (const name of this.lastApplied.keys()) {
       if (!values.has(name)) this.expressionManager.setValue(name, 0)
     }
-
-    for (const [name, val] of values) {
-      this.expressionManager.setValue(name, val)
-    }
-
+    for (const [name, val] of values) this.expressionManager.setValue(name, val)
     this.lastApplied = new Map(values)
+  }
+
+  _applyArkit(blendshapes) {
+    for (const mesh of this.morphTargetMeshes) {
+      const dict = mesh.morphTargetDictionary
+      for (const [name, val] of Object.entries(blendshapes)) {
+        if (name in dict) mesh.morphTargetInfluences[dict[name]] = Math.max(0, Math.min(1, val))
+      }
+    }
   }
 
   getDuration() {
