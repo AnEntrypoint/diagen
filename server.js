@@ -261,7 +261,13 @@ app.post('/api/generate', async (req, res) => {
   }
 })
 
+async function ensureModels() {
+  const { downloadModels } = await import('./download-models.js')
+  await downloadModels()
+}
+
 async function start() {
+  await ensureModels()
   await loadA2F()
   await loadVoiceEmbedding()
   
