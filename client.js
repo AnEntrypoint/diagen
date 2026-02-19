@@ -233,21 +233,15 @@ class FacialAnimationPlayer {
     const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
     const values = new Map()
     const has = (name) => this.availableExpressions.has(name)
-    const set = (name, val) => {
-      if (has(name) && val > 0.001) values.set(name, clamp(val))
-    }
+    const set = (name, val) => { if (has(name)) values.set(name, clamp(val)) }
 
     const visemes = mapVisemes(blendshapes)
-    set('aa', visemes.aa)
-    set('ih', visemes.ih)
-    set('ou', visemes.ou)
-    set('ee', visemes.ee)
-    set('oh', visemes.oh)
+    const dominantViseme = Object.entries(visemes).reduce((a, b) => b[1] > a[1] ? b : a, ['aa', 0])
+    for (const name of ['aa', 'ih', 'ou', 'ee', 'oh']) set(name, name === dominantViseme[0] ? dominantViseme[1] : 0)
 
     const eyes = mapEyes(blendshapes)
     set('blinkLeft', eyes.blinkLeft)
     set('blinkRight', eyes.blinkRight)
-    set('blink', eyes.blink)
 
     const emotions = mapEmotionsV1(blendshapes)
     set('happy', emotions.happy)
@@ -256,24 +250,15 @@ class FacialAnimationPlayer {
     set('relaxed', emotions.relaxed)
     set('surprised', emotions.surprised)
 
-    for (const [name, val] of values) {
-      this.expressionManager.setValue(name, val)
-      this.lastApplied.set(name, val)
+    for (const name of this.lastApplied.keys()) {
+      if (!values.has(name)) this.expressionManager.setValue(name, 0)
     }
 
-    for (const name of this.lastApplied.keys()) {
-      if (!values.has(name)) {
-        const last = this.lastApplied.get(name)
-        const decayed = last * 0.6
-        if (decayed < 0.01) {
-          this.expressionManager.setValue(name, 0)
-          this.lastApplied.delete(name)
-        } else {
-          this.expressionManager.setValue(name, decayed)
-          this.lastApplied.set(name, decayed)
-        }
-      }
+    for (const [name, val] of values) {
+      this.expressionManager.setValue(name, val)
     }
+
+    this.lastApplied = new Map(values)
   }
 
   getDuration() {
