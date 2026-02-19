@@ -16,9 +16,9 @@
     "@sctg/sentencepiece-js": "^1.3.3",
     "audio2afan": "^1.0.1",
     "express": "^5.2.1",
+    "jszip": "^3.10.1",
     "sttttsmodels": "^1.0.4",
     "three": "^0.182.0",
-    "webtalk": "^1.0.6",
-    "jszip": "^3.10.1"
+    "webtalk": "^1.0.11"
   }
 }
