@@ -22,6 +22,7 @@ const MODELS = {
   tts: {
     cid: 'bafybeidyw252ecy4vs46bbmezrtw325gl2ymdltosmzqgx4edjsc3fbofy',
     dir: path.join(__dirname, 'models', 'tts'),
+    prefix: 'tts',
     files: ['flow_lm_flow_int8.onnx', 'flow_lm_main_int8.onnx', 'mimi_decoder_int8.onnx', 'mimi_encoder.onnx', 'text_conditioner.onnx', 'tokenizer.model'],
   },
 }
@@ -35,10 +36,11 @@ async function downloadFile(url, destPath) {
   return fs.statSync(destPath).size
 }
 
-async function fetchWithFallback(cid, filename, destPath) {
+async function fetchWithFallback(cid, remotePath, destPath) {
   for (const gw of GATEWAYS) {
-    const url = `${gw}/${cid}/${filename}`
+    const url = `${gw}/${cid}/${remotePath}`
     try {
+      const filename = remotePath.split('/').pop()
       process.stdout.write(`  [${filename}] ${gw} ... `)
       const bytes = await downloadFile(url, destPath)
       console.log(`OK (${(bytes / 1e6).toFixed(1)} MB)`)
@@ -47,10 +49,10 @@ async function fetchWithFallback(cid, filename, destPath) {
       console.log(`FAIL (${e.message})`)
     }
   }
-  throw new Error(`All gateways failed for ${filename}`)
+  throw new Error(`All gateways failed for ${remotePath}`)
 }
 
-async function downloadModel(name, { cid, dir, files }) {
+async function downloadModel(name, { cid, dir, prefix, files }) {
   fs.mkdirSync(dir, { recursive: true })
   console.log(`\n[${name}] CID: ${cid}`)
   for (const file of files) {
@@ -59,7 +61,8 @@ async function downloadModel(name, { cid, dir, files }) {
       console.log(`  [${file}] already exists, skipping`)
       continue
     }
-    await fetchWithFallback(cid, file, dest)
+    const remotePath = prefix ? `${prefix}/${file}` : file
+    await fetchWithFallback(cid, remotePath, dest)
   }
 }
 
