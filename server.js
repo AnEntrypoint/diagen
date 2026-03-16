@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
+import { downloadQwenModel, loadQwenModel, generateDialog } from './qwen-dialog.mjs'
 
 const require = createRequire(import.meta.url)
 const ttsOnnx = require('webtalk/server-tts-onnx')
@@ -261,15 +262,29 @@ app.post('/api/generate', async (req, res) => {
   }
 })
 
+app.post('/dialog', async (req, res) => {
+  try {
+    const { prompt } = req.body
+    if (!prompt) return res.status(400).json({ error: 'prompt required' })
+    const text = await generateDialog(prompt)
+    res.json({ text })
+  } catch (err) {
+    console.error('[dialog] error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 async function ensureModels() {
   const { downloadModels } = await import('./download-models.js')
   await downloadModels()
+  await downloadQwenModel()
 }
 
 async function start() {
   await ensureModels()
   await loadA2F()
   await loadVoiceEmbedding()
+  await loadQwenModel()
   
   app.listen(port, '0.0.0.0', () => {
     console.log(`diagen server running on http://localhost:${port}`)
