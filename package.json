@@ -12,15 +12,14 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@huggingface/transformers": "^4.0.0-next.7",
     "@pixiv/three-vrm": "^3.4.5",
     "@sctg/sentencepiece-js": "^1.3.3",
     "audio2afan": "^1.0.1",
     "express": "^5.2.1",
     "jszip": "^3.10.1",
-    "onnxruntime-node": "^1.24.1",
     "sttttsmodels": "file:../sttttsmodels",
     "three": "^0.182.0",
-    "webtalk": "^1.0.11"
+    "webtalk": "^1.0.11",
+    "onnxruntime-node": "^1.24.1"
   }
 }
