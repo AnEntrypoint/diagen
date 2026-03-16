@@ -4,7 +4,7 @@ import { createRequire } from 'module'
 import ort from 'onnxruntime-node'
 
 const require = createRequire(import.meta.url)
-const { qwenDir } = require('../sttttsmodels/index.js')
+const { qwenDir } = require('sttttsmodels')
 
 const MODEL_DIR = qwenDir
 const EOS_IDS = new Set([248046, 248044])
