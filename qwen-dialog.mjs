@@ -1,36 +1,13 @@
 import fs from 'fs'
 import path from 'path'
-import { pipeline } from 'stream/promises'
-import { createWriteStream } from 'fs'
-import { fileURLToPath } from 'url'
+import { createRequire } from 'module'
 import ort from 'onnxruntime-node'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const HF_BASE = 'https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct-ONNX/resolve/main'
-const MODEL_DIR = path.join(__dirname, 'models', 'qwen')
-const ONNX_FILE = 'onnx/model_q4f16.onnx'
-const DL_FILES = ['config.json', 'generation_config.json', 'tokenizer.json', 'tokenizer_config.json', ONNX_FILE]
-const EOS_IDS = new Set([151645, 151643])
+const require = createRequire(import.meta.url)
+const { qwenDir } = require('../sttttsmodels/index.js')
 
-async function dlFile(url, dest) {
-  fs.mkdirSync(path.dirname(dest), { recursive: true })
-  const res = await fetch(url, { signal: AbortSignal.timeout(600000), redirect: 'follow' })
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
-  const ws = createWriteStream(dest + '.tmp')
-  await pipeline(res.body, ws)
-  fs.renameSync(dest + '.tmp', dest)
-}
-
-export async function downloadQwenModel() {
-  for (const file of DL_FILES) {
-    const dest = path.join(MODEL_DIR, file)
-    if (fs.existsSync(dest) && fs.statSync(dest).size > 0) { console.log(`[qwen] ${file} cached`); continue }
-    fs.mkdirSync(path.dirname(dest), { recursive: true })
-    console.log(`[qwen] downloading ${file}...`)
-    await dlFile(`${HF_BASE}/${file}`, dest)
-    console.log(`[qwen] ${file} done (${(fs.statSync(dest).size / 1e6).toFixed(1)} MB)`)
-  }
-}
+const MODEL_DIR = qwenDir
+const EOS_IDS = new Set([248046, 248044])
 
 function buildTokenizer(tokJson) {
   const { model, added_tokens = [] } = tokJson
@@ -40,7 +17,6 @@ function buildTokenizer(tokJson) {
   const addedMap = Object.fromEntries(added_tokens.map(at => [at.content, at.id]))
   const addedList = added_tokens.map(at => at.content).sort((a, b) => b.length - a.length)
   const merges = model.merges.map(m => m.split(' '))
-
   const byteEnc = {}
   let n = 0
   for (let b = 0; b < 256; b++) {
@@ -48,7 +24,6 @@ function buildTokenizer(tokJson) {
     else byteEnc[b] = String.fromCharCode(256 + n++)
   }
   const byteDec = Object.fromEntries(Object.entries(byteEnc).map(([b, c]) => [c, +b]))
-
   function bpe(word) {
     let w = [...word]
     while (w.length > 1) {
@@ -62,7 +37,6 @@ function buildTokenizer(tokJson) {
     }
     return w
   }
-
   function tokenize(text) {
     const ids = []
     let rem = text
@@ -76,60 +50,88 @@ function buildTokenizer(tokJson) {
       if (!m) break
       const chunk = m[0]
       rem = rem.slice(chunk.length)
-      const enc = Array.from(new TextEncoder().encode(chunk)).map(b => byteEnc[b]).join('')
-      for (const tok of bpe([...enc])) ids.push(vocab[tok] ?? 0)
+      for (const t of bpe([...Array.from(new TextEncoder().encode(chunk)).map(b => byteEnc[b]).join('')])) ids.push(vocab[t] ?? 0)
     }
     return ids
   }
-
   function decode(ids) {
     const chars = ids.map(id => idToToken[id] ?? '').join('').split('')
     return new TextDecoder().decode(new Uint8Array(chars.map(c => byteDec[c] ?? c.charCodeAt(0))))
   }
-
   return { tokenize, decode }
 }
 
-let sess = null, tok = null, cfg = null, loadP = null
+let embedSess = null, decoderSess = null, tok = null, loadP = null
+let FULL_ATTN = null, NUM_LAYERS = null, NUM_KV_HEADS = null, HEAD_DIM = null
 
 export async function loadQwenModel() {
-  if (sess) return
+  if (embedSess) return
   if (loadP) return loadP
   loadP = (async () => {
-    cfg = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, 'config.json'), 'utf8'))
+    const cfg = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, 'config.json'), 'utf8'))
+    const tc = cfg.text_config
+    NUM_LAYERS = tc.num_hidden_layers
+    NUM_KV_HEADS = tc.num_key_value_heads
+    HEAD_DIM = tc.head_dim
+    const layerTypes = tc.layer_types
+    FULL_ATTN = new Set(layerTypes.map((t, i) => t === 'full_attention' ? i : -1).filter(i => i >= 0))
     tok = buildTokenizer(JSON.parse(fs.readFileSync(path.join(MODEL_DIR, 'tokenizer.json'), 'utf8')))
-    console.log('[qwen] loading ONNX session...')
-    sess = await ort.InferenceSession.create(path.join(MODEL_DIR, ONNX_FILE), {
-      executionProviders: ['cpu'], graphOptimizationLevel: 'all',
-    })
-    console.log('[qwen] ready, inputs:', sess.inputNames.slice(0, 3).join(', '), '...')
+    const opts = { executionProviders: ['cpu'], graphOptimizationLevel: 'all' }
+    console.log('[qwen] loading embed_tokens...')
+    embedSess = await ort.InferenceSession.create(path.join(MODEL_DIR, 'onnx/embed_tokens_q4.onnx'), opts)
+    console.log('[qwen] loading decoder...')
+    decoderSess = await ort.InferenceSession.create(path.join(MODEL_DIR, 'onnx/decoder_model_merged_q4.onnx'), opts)
+    console.log('[qwen] ready')
   })()
   return loadP
 }
 
+function initState() {
+  const s = {}
+  for (let i = 0; i < NUM_LAYERS; i++) {
+    if (FULL_ATTN.has(i)) {
+      s[`past_key_values.${i}.key`] = new ort.Tensor('float32', new Float32Array(0), [1, NUM_KV_HEADS, 0, HEAD_DIM])
+      s[`past_key_values.${i}.value`] = new ort.Tensor('float32', new Float32Array(0), [1, NUM_KV_HEADS, 0, HEAD_DIM])
+    } else {
+      s[`past_conv.${i}`] = new ort.Tensor('float32', new Float32Array(1 * 6144 * 4), [1, 6144, 4])
+      s[`past_recurrent.${i}`] = new ort.Tensor('float32', new Float32Array(1 * 16 * 128 * 128), [1, 16, 128, 128])
+    }
+  }
+  return s
+}
+
+function syncState(state, out) {
+  for (let i = 0; i < NUM_LAYERS; i++) {
+    if (FULL_ATTN.has(i)) {
+      state[`past_key_values.${i}.key`] = out[`present.${i}.key`]
+      state[`past_key_values.${i}.value`] = out[`present.${i}.value`]
+    } else {
+      state[`past_conv.${i}`] = out[`present_conv.${i}`]
+      state[`past_recurrent.${i}`] = out[`present_recurrent.${i}`]
+    }
+  }
+}
+
 export async function generateDialog(prompt, { maxNewTokens = 200, system = 'You are a helpful dialog assistant. Be concise.' } = {}) {
   await loadQwenModel()
-  const text = `<|im_start|>system\n${system}<|im_end|>\n<|im_start|>user\n${prompt}<|im_end|>\n<|im_start|>assistant\n`
-  const ids = tok.tokenize(text)
-  const numLayers = cfg.num_hidden_layers
-  const numKvHeads = cfg.num_key_value_heads
-  const headDim = Math.floor(cfg.hidden_size / cfg.num_attention_heads)
-  const emptyKv = () => new ort.Tensor('float16', new Uint16Array(0), [1, numKvHeads, 0, headDim])
+  const ids = tok.tokenize(`<|im_start|>system\n${system}<|im_end|>\n<|im_start|>user\n${prompt}<|im_end|>\n<|im_start|>assistant\n`)
+  const state = initState()
+  let seqLen = ids.length
 
-  const feeds = {
-    input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
-    attention_mask: new ort.Tensor('int64', BigInt64Array.from(ids.map(() => 1n)), [1, ids.length]),
-    position_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map((_, i) => BigInt(i))), [1, ids.length]),
-  }
-  for (let i = 0; i < numLayers; i++) {
-    feeds[`past_key_values.${i}.key`] = emptyKv()
-    feeds[`past_key_values.${i}.value`] = emptyKv()
+  const { inputs_embeds } = await embedSess.run({
+    input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, seqLen])
+  })
+  const posSeq = BigInt64Array.from(ids.map((_, i) => BigInt(i)))
+  let feeds = {
+    inputs_embeds,
+    attention_mask: new ort.Tensor('int64', BigInt64Array.from(ids.map(() => 1n)), [1, seqLen]),
+    position_ids: new ort.Tensor('int64', [...posSeq, ...posSeq, ...posSeq], [3, 1, seqLen]),
+    ...state,
   }
 
   const out_ids = []
-  let seqLen = ids.length
   for (let step = 0; step < maxNewTokens; step++) {
-    const out = await sess.run(feeds)
+    const out = await decoderSess.run(feeds)
     const logits = out.logits.data
     const vSize = out.logits.dims[2]
     const offset = (out.logits.dims[1] - 1) * vSize
@@ -137,13 +139,17 @@ export async function generateDialog(prompt, { maxNewTokens = 200, system = 'You
     for (let v = 0; v < vSize; v++) { if (logits[offset + v] > maxV) { maxV = logits[offset + v]; nextId = v } }
     if (EOS_IDS.has(nextId)) break
     out_ids.push(nextId)
+    syncState(state, out)
     seqLen++
-    feeds.input_ids = new ort.Tensor('int64', BigInt64Array.from([BigInt(nextId)]), [1, 1])
-    feeds.attention_mask = new ort.Tensor('int64', BigInt64Array.from(new Array(seqLen).fill(1n)), [1, seqLen])
-    feeds.position_ids = new ort.Tensor('int64', BigInt64Array.from([BigInt(seqLen - 1)]), [1, 1])
-    for (let i = 0; i < numLayers; i++) {
-      feeds[`past_key_values.${i}.key`] = out[`present.${i}.key`]
-      feeds[`past_key_values.${i}.value`] = out[`present.${i}.value`]
+    const pos = BigInt(seqLen - 1)
+    const { inputs_embeds: nextEmbed } = await embedSess.run({
+      input_ids: new ort.Tensor('int64', BigInt64Array.from([BigInt(nextId)]), [1, 1])
+    })
+    feeds = {
+      inputs_embeds: nextEmbed,
+      attention_mask: new ort.Tensor('int64', BigInt64Array.from(new Array(seqLen).fill(1n)), [1, seqLen]),
+      position_ids: new ort.Tensor('int64', [pos, pos, pos], [3, 1, 1]),
+      ...state,
     }
   }
   return tok.decode(out_ids)

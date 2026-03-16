@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
-import { downloadQwenModel, loadQwenModel, generateDialog } from './qwen-dialog.mjs'
+import { loadQwenModel, generateDialog } from './qwen-dialog.mjs'
 
 const require = createRequire(import.meta.url)
 const ttsOnnx = require('webtalk/server-tts-onnx')
@@ -277,7 +277,6 @@ app.post('/dialog', async (req, res) => {
 async function ensureModels() {
   const { downloadModels } = await import('./download-models.js')
   await downloadModels()
-  await downloadQwenModel()
 }
 
 async function start() {
