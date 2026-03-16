@@ -58,29 +58,20 @@ async function loadVoiceEmbedding() {
   }
 
   console.log('[voice] Encoding voice from', CLEETUS_WAV)
-  
-  // Load and decode WAV
   const wavBuffer = fs.readFileSync(CLEETUS_WAV)
   const view = new DataView(wavBuffer.buffer, wavBuffer.byteOffset, wavBuffer.byteLength)
-  
-  // Parse WAV header
   const sampleRate = view.getUint32(24, true)
   const dataSize = view.getUint32(40, true)
   const numSamples = dataSize / 2
-  
   const audioData = new Float32Array(numSamples)
   for (let i = 0; i < numSamples; i++) {
     const val = view.getInt16(44 + i * 2, true)
     audioData[i] = val < 0 ? val / 0x8000 : val / 0x7FFF
   }
-  
-  // Resample to 24kHz if needed
   let resampledData = audioData
   if (sampleRate !== SAMPLE_RATE) {
     resampledData = resampleAudio(audioData, sampleRate, SAMPLE_RATE)
   }
-  
-  // Load TTS models and encode voice
   await ttsOnnx.loadModels(TTS_MODELS_DIR)
   voiceEmbedding = await ttsOnnx.encodeVoiceAudio(resampledData)
   
@@ -175,13 +166,8 @@ app.post('/api/generate', async (req, res) => {
     
     const startTime = performance.now()
     
-    // Generate TTS audio using ONNX
     const audioFloat = await ttsOnnx.synthesize(text, voiceEmb, TTS_MODELS_DIR)
-    
-    // Encode to WAV
     const audioWav = encodeWAV(audioFloat, SAMPLE_RATE)
-    
-    // Generate animation
     const audio16k = resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE)
     
     const fps = 30
