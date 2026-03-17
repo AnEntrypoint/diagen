@@ -8,6 +8,7 @@ let pendingResolvers = {}
 let msgId = 0
 let appState = 'loading'
 let modelReady = false
+let ttsReady = false
 let recognition = null
 
 function nextId() { return ++msgId }
@@ -38,8 +39,8 @@ function sendWorker(msg) {
 }
 
 worker.onmessage = (e) => {
-  const { type, id, progress, message, text, token } = e.data
-  if (type === 'progress') {
+  const { type, id, progress, message, text, token, audio, sampling_rate } = e.data
+  if (type === 'progress' || type === 'tts_progress') {
     const pct = progress?.progress ?? 0
     $('progress-bar').style.width = `${Math.round(pct)}%`
     $('progress-text').textContent = progress?.file ? `Loading ${progress.file}…` : 'Loading model…'
@@ -54,7 +55,8 @@ worker.onmessage = (e) => {
   if (!r) return
   delete pendingResolvers[id]
   if (type === 'error') r.reject(new Error(message))
-  else r.resolve({ type, text })
+  else if (type === 'audio') r.resolve({ audio, sampling_rate })
+  else r.resolve(e.data)
 }
 
 async function loadModel() {
@@ -66,8 +68,9 @@ async function loadModel() {
   setState('mic_only')
   $('progress-wrap').hidden = false
   try {
-    await sendWorker({ type: 'load' })
+    const result = await sendWorker({ type: 'load' })
     modelReady = true
+    ttsReady = result.ttsLoaded === true
     $('progress-wrap').hidden = true
     setState('idle')
   } catch (err) {
@@ -76,9 +79,31 @@ async function loadModel() {
   }
 }
 
-function speak(text) {
+async function playAudio(audio, samplingRate) {
+  const ctx = new AudioContext({ sampleRate: samplingRate })
+  const buf = ctx.createBuffer(1, audio.length, samplingRate)
+  buf.copyToChannel(audio, 0)
+  const src = ctx.createBufferSource()
+  src.buffer = buf
+  src.connect(ctx.destination)
   return new Promise((resolve) => {
-    if (!synth) { resolve(); return }
+    src.onended = () => { ctx.close(); resolve() }
+    src.start()
+  })
+}
+
+async function speak(text) {
+  if (ttsReady) {
+    try {
+      const { audio, sampling_rate } = await sendWorker({ type: 'synthesize', text })
+      await playAudio(audio, sampling_rate)
+      return
+    } catch (err) {
+      console.warn('PocketTTS failed, falling back to browser TTS:', err.message)
+    }
+  }
+  if (!synth) return
+  return new Promise((resolve) => {
     synth.cancel()
     const utt = new SpeechSynthesisUtterance(text)
     utt.onend = resolve
