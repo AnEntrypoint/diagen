@@ -66,6 +66,7 @@ ttsWorker.onmessage = (e) => {
   const { type } = e.data
   if (type === 'loaded') {
     ttsReady = true
+    console.log('[TTS] PocketTTS ready')
   } else if (type === 'audio_chunk') {
     if (ttsChunks) ttsChunks.push(new Float32Array(e.data.data))
   } else if (type === 'stream_ended') {
@@ -73,9 +74,13 @@ ttsWorker.onmessage = (e) => {
       ttsChunkResolve(ttsChunks)
       ttsChunks = null; ttsChunkResolve = null; ttsChunkReject = null
     }
-  } else if (type === 'error' && ttsChunkReject) {
-    ttsChunkReject(new Error(e.data.error))
-    ttsChunks = null; ttsChunkResolve = null; ttsChunkReject = null
+  } else if (type === 'error') {
+    if (ttsChunkReject) {
+      ttsChunkReject(new Error(e.data.error))
+      ttsChunks = null; ttsChunkResolve = null; ttsChunkReject = null
+    } else {
+      console.error('[TTS] Worker error (not during generation):', e.data.error)
+    }
   }
 }
 
