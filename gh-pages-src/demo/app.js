@@ -7,14 +7,15 @@ const history = []
 let pendingResolvers = {}
 let msgId = 0
 let appState = 'loading'
+let modelReady = false
 let recognition = null
 
 function nextId() { return ++msgId }
 
 function setState(s) {
   appState = s
-  $('status').textContent = { loading: 'Loading model…', idle: 'Ready — click Speak', recording: 'Listening…', generating: 'Thinking…', speaking: 'Speaking…' }[s] ?? s
-  $('speak-btn').disabled = s !== 'idle'
+  $('status').textContent = { loading: 'Loading model…', idle: 'Ready — click Speak', recording: 'Listening…', generating: 'Thinking…', speaking: 'Speaking…', mic_only: 'Model loading — mic ready' }[s] ?? s
+  $('speak-btn').disabled = s === 'generating' || s === 'speaking' || s === 'no_mic'
   $('speak-btn').classList.toggle('recording', s === 'recording')
 }
 
@@ -57,18 +58,21 @@ worker.onmessage = (e) => {
 }
 
 async function loadModel() {
-  setState('loading')
+  if (!SpeechRecognition) {
+    $('status').textContent = 'Web Speech API not supported in this browser (use Chrome/Edge)'
+    $('speak-btn').disabled = true
+    return
+  }
+  setState('mic_only')
   $('progress-wrap').hidden = false
   try {
     await sendWorker({ type: 'load' })
+    modelReady = true
     $('progress-wrap').hidden = true
-    if (!SpeechRecognition) {
-      $('status').textContent = 'Web Speech API not supported in this browser (use Chrome/Edge)'
-      return
-    }
     setState('idle')
   } catch (err) {
-    $('status').textContent = `Model load failed: ${err.message}`
+    $('progress-wrap').hidden = true
+    $('status').textContent = `Model load failed: ${err.message} — mic still available`
   }
 }
 
@@ -102,18 +106,22 @@ function startRecognition() {
 }
 
 $('speak-btn').addEventListener('click', async () => {
-  if (appState !== 'idle') return
+  if (appState === 'generating' || appState === 'speaking' || appState === 'recording') return
   setState('recording')
   let transcript = ''
   try {
     transcript = await startRecognition()
   } catch (err) {
     $('status').textContent = `Mic error: ${err.message}`
-    setState('idle')
+    setState(modelReady ? 'idle' : 'mic_only')
     return
   }
-  if (!transcript) { setState('idle'); return }
+  if (!transcript) { setState(modelReady ? 'idle' : 'mic_only'); return }
   addBubble('user', transcript)
+  if (!modelReady) {
+    $('status').textContent = 'Model still loading — please wait and try again'
+    return
+  }
   history.push({ role: 'user', content: transcript })
   setState('generating')
   addBubble('assistant', '')
