@@ -357,7 +357,6 @@ self.onmessage = async (e) => {
     if (type === 'load') {
         try {
             await loadModels();
-            postMessage({ type: 'loaded' });
         } catch (err) {
             postMessage({ type: 'error', error: err.toString() });
         }
@@ -569,9 +568,11 @@ async function loadModels() {
                         currentVoiceName = firstVoice;
                     }
                 }
+            } else {
+                console.warn(`[TTS] voices.bin not found (HTTP ${voicesResponse.status}), will use cleetus.wav fallback`);
             }
         } catch (e) {
-            console.warn('Could not load predefined voices:', e);
+            console.error('[TTS] Could not load predefined voices:', e);
             postMessage({ type: 'status', status: 'Voice load error: ' + e.message, state: 'loading' });
         }
 
@@ -583,18 +584,30 @@ async function loadModels() {
         });
 
         if (!currentVoiceEmbedding) {
+            console.log('[TTS] No predefined voice available, encoding cleetus.wav fallback...');
             try {
                 const wavRes = await fetch('./cleetus.wav');
                 if (wavRes.ok) {
                     const wavBuf = await wavRes.arrayBuffer();
                     const audio = decodeWavTo24k(wavBuf);
+                    console.log(`[TTS] Encoding cleetus.wav (${audio.length} samples at 24kHz)...`);
                     currentVoiceEmbedding = await encodeVoiceAudio(audio);
                     currentVoiceName = 'cleetus';
+                    console.log('[TTS] cleetus.wav voice encoded successfully, shape:', currentVoiceEmbedding.shape);
                     postMessage({ type: 'voices_loaded', voices: ['cleetus'], defaultVoice: 'cleetus' });
+                } else {
+                    console.error(`[TTS] cleetus.wav not found (HTTP ${wavRes.status})`);
                 }
             } catch(e) {
-                console.warn('[TTS] Failed to encode default voice:', e.message);
+                console.error('[TTS] Failed to encode default voice:', e.message, e.stack);
             }
+        }
+
+        if (!currentVoiceEmbedding) {
+            const msg = 'No voice embedding available after all loading attempts. Check browser console for details.';
+            console.error('[TTS]', msg);
+            postMessage({ type: 'error', error: msg });
+            return;
         }
 
         // Pre-allocate s/t tensors for Flow Matching Loop (Optimization)
