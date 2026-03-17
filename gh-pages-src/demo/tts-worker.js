@@ -527,7 +527,12 @@ async function loadModels() {
             throw new Error(`Failed to load tokenizer: ${tokenizerResponse.statusText}`);
         }
         const tokenizerBuffer = await tokenizerResponse.arrayBuffer();
-        tokenizerModelB64 = btoa(String.fromCharCode(...new Uint8Array(tokenizerBuffer)));
+        const tokBytes = new Uint8Array(tokenizerBuffer);
+        let tokBin = '';
+        for (let i = 0; i < tokBytes.length; i += 8192) {
+            tokBin += String.fromCharCode(...tokBytes.subarray(i, i + 8192));
+        }
+        tokenizerModelB64 = btoa(tokBin);
 
         // Import and initialize sentencepiece processor
         const spModule = await import('https://esm.sh/@sctg/sentencepiece-js@1.3.3');

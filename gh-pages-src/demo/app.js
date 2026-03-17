@@ -64,7 +64,7 @@ worker.onmessage = (e) => {
   else r.resolve(e.data)
 }
 
-function waitForTTS(timeoutMs = 120000) {
+function waitForTTS(timeoutMs = 10000) {
   if (ttsReady) return Promise.resolve(true)
   if (!ttsLoading) return Promise.resolve(false)
   return new Promise((resolve) => {
@@ -137,7 +137,7 @@ function playAudio(pcm, sampleRate) {
   src.connect(ctx.destination)
   return new Promise((resolve) => {
     src.onended = () => { ctx.close(); resolve() }
-    src.start()
+    ctx.resume().then(() => src.start())
   })
 }
 
