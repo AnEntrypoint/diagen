@@ -1,4 +1,5 @@
 const worker = new Worker('./worker.js', { type: 'module' })
+const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
 
@@ -8,6 +9,10 @@ let pendingResolvers = {}
 let msgId = 0
 let appState = 'loading'
 let modelReady = false
+let ttsReady = false
+let ttsChunks = null
+let ttsChunkResolve = null
+let ttsChunkReject = null
 let recognition = null
 
 function nextId() { return ++msgId }
@@ -38,7 +43,7 @@ function sendWorker(msg) {
 }
 
 worker.onmessage = (e) => {
-  const { type, id, progress, message, text, token } = e.data
+  const { type, id, progress, message, token } = e.data
   if (type === 'progress') {
     const pct = progress?.progress ?? 0
     $('progress-bar').style.width = `${Math.round(pct)}%`
@@ -54,8 +59,27 @@ worker.onmessage = (e) => {
   if (!r) return
   delete pendingResolvers[id]
   if (type === 'error') r.reject(new Error(message))
-  else r.resolve({ type, text })
+  else r.resolve(e.data)
 }
+
+ttsWorker.onmessage = (e) => {
+  const { type } = e.data
+  if (type === 'loaded') {
+    ttsReady = true
+  } else if (type === 'audio_chunk') {
+    if (ttsChunks) ttsChunks.push(new Float32Array(e.data.data))
+  } else if (type === 'stream_ended') {
+    if (ttsChunkResolve) {
+      ttsChunkResolve(ttsChunks)
+      ttsChunks = null; ttsChunkResolve = null; ttsChunkReject = null
+    }
+  } else if (type === 'error' && ttsChunkReject) {
+    ttsChunkReject(new Error(e.data.error))
+    ttsChunks = null; ttsChunkResolve = null; ttsChunkReject = null
+  }
+}
+
+ttsWorker.postMessage({ type: 'load' })
 
 async function loadModel() {
   if (!SpeechRecognition) {
@@ -76,9 +100,42 @@ async function loadModel() {
   }
 }
 
-function speak(text) {
+function playAudio(pcm, sampleRate) {
+  const ctx = new AudioContext({ sampleRate })
+  const buf = ctx.createBuffer(1, pcm.length, sampleRate)
+  buf.copyToChannel(pcm, 0)
+  const src = ctx.createBufferSource()
+  src.buffer = buf
+  src.connect(ctx.destination)
   return new Promise((resolve) => {
-    if (!synth) { resolve(); return }
+    src.onended = () => { ctx.close(); resolve() }
+    src.start()
+  })
+}
+
+async function speak(text) {
+  if (ttsReady) {
+    try {
+      const chunks = await new Promise((resolve, reject) => {
+        ttsChunks = []
+        ttsChunkResolve = resolve
+        ttsChunkReject = reject
+        ttsWorker.postMessage({ type: 'generate', data: { text } })
+      })
+      if (chunks.length > 0) {
+        const total = chunks.reduce((s, c) => s + c.length, 0)
+        const pcm = new Float32Array(total)
+        let off = 0
+        for (const c of chunks) { pcm.set(c, off); off += c.length }
+        await playAudio(pcm, 24000)
+        return
+      }
+    } catch (err) {
+      console.warn('PocketTTS failed, falling back to browser TTS:', err.message)
+    }
+  }
+  if (!synth) return
+  return new Promise((resolve) => {
     synth.cancel()
     const utt = new SpeechSynthesisUtterance(text)
     utt.onend = resolve
