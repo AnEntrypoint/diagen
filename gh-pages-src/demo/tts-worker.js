@@ -604,10 +604,8 @@ async function loadModels() {
         }
 
         if (!currentVoiceEmbedding) {
-            const msg = 'No voice embedding available after all loading attempts. Check browser console for details.';
-            console.error('[TTS]', msg);
-            postMessage({ type: 'error', error: msg });
-            return;
+            console.warn('[TTS] No voice embedding loaded — worker will be ready but voice must be uploaded before generating');
+            postMessage({ type: 'status', status: 'No voice loaded — upload audio to set voice', state: 'loading' });
         }
 
         // Pre-allocate s/t tensors for Flow Matching Loop (Optimization)

@@ -10,6 +10,8 @@ let msgId = 0
 let appState = 'loading'
 let modelReady = false
 let ttsReady = false
+let ttsLoading = true
+let ttsReadyResolvers = []
 let ttsChunks = null
 let ttsChunkResolve = null
 let ttsChunkReject = null
@@ -62,11 +64,32 @@ worker.onmessage = (e) => {
   else r.resolve(e.data)
 }
 
+function waitForTTS(timeoutMs = 120000) {
+  if (ttsReady) return Promise.resolve(true)
+  if (!ttsLoading) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const idx = ttsReadyResolvers.indexOf(resolve)
+      if (idx !== -1) ttsReadyResolvers.splice(idx, 1)
+      resolve(false)
+    }, timeoutMs)
+    ttsReadyResolvers.push((ok) => { clearTimeout(timer); resolve(ok) })
+  })
+}
+
 ttsWorker.onmessage = (e) => {
   const { type } = e.data
   if (type === 'loaded') {
     ttsReady = true
+    ttsLoading = false
     console.log('[TTS] PocketTTS ready')
+    ttsReadyResolvers.forEach(r => r(true))
+    ttsReadyResolvers = []
+  } else if (type === 'error' && !ttsReady && ttsLoading && !ttsChunkReject) {
+    ttsLoading = false
+    console.warn('[TTS] Worker failed to load, will use browser TTS:', e.data.error)
+    ttsReadyResolvers.forEach(r => r(false))
+    ttsReadyResolvers = []
   } else if (type === 'audio_chunk') {
     if (ttsChunks) ttsChunks.push(new Float32Array(e.data.data))
   } else if (type === 'stream_ended') {
@@ -119,7 +142,8 @@ function playAudio(pcm, sampleRate) {
 }
 
 async function speak(text) {
-  if (ttsReady) {
+  const ready = await waitForTTS()
+  if (ready) {
     try {
       const chunks = await new Promise((resolve, reject) => {
         ttsChunks = []
@@ -135,8 +159,9 @@ async function speak(text) {
         await playAudio(pcm, 24000)
         return
       }
+      console.warn('[TTS] PocketTTS returned 0 chunks, falling back to browser TTS')
     } catch (err) {
-      console.warn('PocketTTS failed, falling back to browser TTS:', err.message)
+      console.warn('[TTS] PocketTTS failed, falling back to browser TTS:', err.message)
     }
   }
   if (!synth) return
