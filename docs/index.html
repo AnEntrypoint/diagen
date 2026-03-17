@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qwen Voice Chat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f0f13;
+      color: #e8e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100dvh;
+      padding: 1rem;
+    }
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.5rem; color: #a78bfa }
+    #progress-wrap {
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 1rem;
+      background: #1e1e2e;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid #2d2d3f;
+    }
+    #progress-text { font-size: 0.75rem; padding: 0.4rem 0.6rem; color: #888 }
+    #progress-track { height: 4px; background: #2d2d3f }
+    #progress-bar { height: 4px; width: 0%; background: #a78bfa; transition: width 0.3s }
+    #chat {
+      width: 100%;
+      max-width: 600px;
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 0.5rem 0;
+      min-height: 300px;
+      max-height: calc(100dvh - 220px);
+    }
+    .bubble {
+      max-width: 80%;
+      padding: 0.6rem 0.9rem;
+      border-radius: 14px;
+      line-height: 1.5;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .bubble.user {
+      background: #4c1d95;
+      color: #ede9fe;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.assistant {
+      background: #1e1e2e;
+      color: #e8e8f0;
+      align-self: flex-start;
+      border: 1px solid #2d2d3f;
+      border-bottom-left-radius: 4px;
+    }
+    #controls {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 1rem;
+    }
+    #speak-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: none;
+      background: #6d28d9;
+      color: #fff;
+      font-size: 1.8rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #speak-btn:disabled { background: #3b3b52; cursor: not-allowed }
+    #speak-btn.recording { background: #dc2626; animation: pulse 1s infinite }
+    #speak-btn:not(:disabled):hover { background: #7c3aed }
+    @keyframes pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.08) } }
+    #status {
+      font-size: 0.85rem;
+      color: #888;
+      text-align: center;
+      min-height: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Qwen Voice Chat</h1>
+  <div id="progress-wrap">
+    <div id="progress-text">Initializing…</div>
+    <div id="progress-track"><div id="progress-bar"></div></div>
+  </div>
+  <div id="chat"></div>
+  <div id="controls">
+    <button id="speak-btn" disabled title="Click to speak">🎤</button>
+    <div id="status">Loading model…</div>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
