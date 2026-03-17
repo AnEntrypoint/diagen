@@ -16,7 +16,7 @@ function buildTokenizer(tokJson) {
   for (const at of added_tokens) idToToken[at.id] = at.content
   const addedMap = Object.fromEntries(added_tokens.map(at => [at.content, at.id]))
   const addedList = added_tokens.map(at => at.content).sort((a, b) => b.length - a.length)
-  const merges = model.merges.map(m => m.split(' '))
+  const merges = model.merges.map(m => Array.isArray(m) ? m : m.split(' '))
   const byteEnc = {}
   let n = 0
   for (let b = 0; b < 256; b++) {
