@@ -1,50 +1,35 @@
 import { pipeline, TextStreamer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
 
-const LLM_MODEL = 'onnx-community/Qwen2.5-0.5B-Instruct'
-const TTS_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX'
-const LLM_DTYPE = 'q4'
+const MODEL_ID = 'onnx-community/Qwen2.5-0.5B-Instruct'
+const DTYPE = 'q4'
 
 let generator = null
-let synthesizer = null
-let llmLoading = false
-let ttsLoading = false
+let loading = false
 let loadError = null
 
 self.onmessage = async (e) => {
   const { type, id } = e.data
 
   if (type === 'load') {
-    if (generator && synthesizer) { self.postMessage({ type: 'loaded', id }); return }
-    if (llmLoading) return
-    llmLoading = true
-    ttsLoading = true
+    if (generator) { self.postMessage({ type: 'loaded', id }); return }
+    if (loading) return
+    loading = true
     try {
-      generator = await pipeline('text-generation', LLM_MODEL, {
-        dtype: LLM_DTYPE,
+      generator = await pipeline('text-generation', MODEL_ID, {
+        dtype: DTYPE,
         device: 'webgpu',
         progress_callback: (p) => self.postMessage({ type: 'progress', progress: p }),
-      }).catch(() => pipeline('text-generation', LLM_MODEL, {
-        dtype: LLM_DTYPE,
-        device: 'wasm',
-        progress_callback: (p) => self.postMessage({ type: 'progress', progress: p }),
-      }))
-      llmLoading = false
-
-      try {
-        synthesizer = await pipeline('text-to-speech', TTS_MODEL, {
-          dtype: 'fp32',
+      }).catch(async () => {
+        return pipeline('text-generation', MODEL_ID, {
+          dtype: DTYPE,
           device: 'wasm',
-          progress_callback: (p) => self.postMessage({ type: 'tts_progress', progress: p }),
+          progress_callback: (p) => self.postMessage({ type: 'progress', progress: p }),
         })
-      } catch (ttsErr) {
-        console.warn('[worker] TTS model failed to load:', ttsErr.message)
-      }
-      ttsLoading = false
-
-      self.postMessage({ type: 'loaded', ttsLoaded: !!synthesizer, id })
+      })
+      loading = false
+      self.postMessage({ type: 'loaded', id })
     } catch (err) {
-      llmLoading = false
-      ttsLoading = false
+      loading = false
       loadError = err.message
       self.postMessage({ type: 'error', message: err.message, id })
     }
@@ -74,22 +59,6 @@ self.onmessage = async (e) => {
         streamer,
       })
       self.postMessage({ type: 'result', text: tokens.join(''), id })
-    } catch (err) {
-      self.postMessage({ type: 'error', message: err.message, id })
-    }
-    return
-  }
-
-  if (type === 'synthesize') {
-    if (!synthesizer) {
-      self.postMessage({ type: 'error', message: 'TTS model not loaded', id })
-      return
-    }
-    const { text } = e.data
-    try {
-      const out = await synthesizer(text, { voice: 'af_heart' })
-      const { audio, sampling_rate } = out
-      self.postMessage({ type: 'audio', audio, sampling_rate, id }, [audio.buffer])
     } catch (err) {
       self.postMessage({ type: 'error', message: err.message, id })
     }
