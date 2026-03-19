@@ -1,0 +1,32 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy voices and generate manifest
+        run: |
+          mkdir -p gh-pages-src/demo/voices
+          if [ -d voices ]; then
+            cp voices/*.wav gh-pages-src/demo/voices/ 2>/dev/null || true
+          fi
+          ls gh-pages-src/demo/voices/*.wav 2>/dev/null | xargs -I{} basename {} | \
+            jq -Rs '[split("\n")[] | select(length>0)]' > gh-pages-src/demo/voices/manifest.json
+          cat gh-pages-src/demo/voices/manifest.json
+
+      - name: Deploy landing page to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages-src
+          publish_branch: gh-pages
+          force_orphan: true
