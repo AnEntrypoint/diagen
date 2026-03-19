@@ -1,8 +1,8 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=12'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=13'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
-  'decoder_model_merged_q4.onnx_data': { stem: 'decoder_model_merged_q4.onnx_data', parts: 5 },
+  'decoder_model_merged_q4f16.onnx_data': { stem: 'decoder_model_merged_q4f16.onnx_data', parts: 5 },
   'embed_tokens_quantized.onnx': { stem: 'embed_tokens_q8', parts: 3 },
 }
 
@@ -41,7 +41,7 @@ env.localModelPath = './'
 env.fetch = self.fetch
 
 const MODEL_ID = 'model'
-const DTYPE = { embed_tokens: 'q8', vision_encoder: 'quantized', decoder_model_merged: 'q4' }
+const DTYPE = { embed_tokens: 'q8', vision_encoder: 'quantized', decoder_model_merged: 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null
