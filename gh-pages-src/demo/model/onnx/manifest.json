@@ -1,10 +1,10 @@
 {
-  "decoder_model_merged_q4.onnx": [
-    "decoder_model_merged_q4.part0",
-    "decoder_model_merged_q4.part1",
-    "decoder_model_merged_q4.part2",
-    "decoder_model_merged_q4.part3",
-    "decoder_model_merged_q4.part4"
+  "decoder_model_merged_q4f16.onnx": [
+    "decoder_model_merged_q4f16.onnx_data.part0",
+    "decoder_model_merged_q4f16.onnx_data.part1",
+    "decoder_model_merged_q4f16.onnx_data.part2",
+    "decoder_model_merged_q4f16.onnx_data.part3",
+    "decoder_model_merged_q4f16.onnx_data.part4"
   ],
   "embed_tokens_q8.onnx": [
     "embed_tokens_q8.part0",
