@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=18'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=19'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -43,7 +43,7 @@ env.localModelPath = './'
 env.fetch = self.fetch
 
 const MODEL_ID = 'model'
-const DTYPE = { model: 'q4f16' }
+const DTYPE = { 'decoder_model_merged': 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null
