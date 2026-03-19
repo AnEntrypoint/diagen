@@ -97,14 +97,6 @@
   "vision_end_token_id": 248054,
   "vision_start_token_id": 248053,
   "transformers.js_config": {
-    "use_external_data_format": {
-      "embed_tokens.onnx": 1,
-      "vision_encoder.onnx": 1,
-      "decoder_model_merged.onnx": 2,
-      "embed_tokens_quantized.onnx": 1,
-      "vision_encoder_quantized.onnx": 1,
-      "decoder_model_merged_quantized.onnx": 1
-    },
     "kv_cache_dtype": {
       "q4f16": "float16",
       "fp16": "float16"
