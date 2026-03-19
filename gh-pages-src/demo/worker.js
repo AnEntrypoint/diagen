@@ -1,8 +1,8 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=11'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=12'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
-  'decoder_model_merged_q4.onnx': { stem: 'decoder_model_merged_q4', parts: 5 },
+  'decoder_model_merged_q4.onnx_data': { stem: 'decoder_model_merged_q4.onnx_data', parts: 5 },
   'embed_tokens_quantized.onnx': { stem: 'embed_tokens_q8', parts: 3 },
 }
 
@@ -26,7 +26,6 @@ async function fetchChunked(stem, parts) {
 const origFetch = self.fetch.bind(self)
 self.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url
-  if (url.endsWith('_data')) return new Response('', { status: 404 })
   for (const [fname, { stem, parts }] of Object.entries(CHUNKS)) {
     if (url.endsWith(fname)) {
       const buf = await fetchChunked(stem, parts)
