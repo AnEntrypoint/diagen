@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=13', { type: 'module' })
+const worker = new Worker('./worker.js?v=14', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -43,6 +43,13 @@ worker.onmessage = (e) => {
   if (!r) return
   delete pendingResolvers[id]
   if (type === 'error') r.reject(new Error(message)); else r.resolve(e.data)
+}
+worker.onerror = (e) => {
+  const msg = e.message || 'Worker crashed (out of memory?)'
+  Object.values(pendingResolvers).forEach(r => r.reject(new Error(msg)))
+  Object.keys(pendingResolvers).forEach(k => delete pendingResolvers[k])
+  $('progress-wrap').hidden = true
+  $('status').textContent = `Model load failed: ${msg} — mic still available`
 }
 function waitForTTS() {
   if (ttsReady) return Promise.resolve(true)
