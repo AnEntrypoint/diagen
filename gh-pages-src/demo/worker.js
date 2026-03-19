@@ -1,14 +1,10 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=15'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=17'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
   'decoder_model_merged_q4f16.onnx_data': {
     stem: 'decoder_model_merged_q4f16.onnx_data',
     sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
-  },
-  'embed_tokens_quantized.onnx': {
-    stem: 'embed_tokens_q8',
-    sizes: [103809024, 103809024, 46662328]
   },
 }
 
@@ -47,7 +43,7 @@ env.localModelPath = './'
 env.fetch = self.fetch
 
 const MODEL_ID = 'model'
-const DTYPE = { embed_tokens: 'q8', decoder_model_merged: 'q4f16' }
+const DTYPE = { model: 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null
@@ -62,8 +58,9 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
-        dtype: DTYPE, device: 'wasm', progress_callback: progress
+      model = await Qwen3ForCausalLM.from_pretrained(MODEL_ID, {
+        dtype: DTYPE, device: 'wasm', progress_callback: progress,
+        model_file_name: 'decoder_model_merged_q4f16'
       })
       loading = false
       self.postMessage({ type: 'loaded', id })
@@ -81,7 +78,7 @@ self.onmessage = async (e) => {
       const tokens = []
       const formatted = messages.map(m => ({ role: m.role, content: [{ type: 'text', text: m.content }] }))
       const promptText = processor.apply_chat_template(formatted, { add_generation_prompt: config.addGenerationPrompt !== false, tokenize: false })
-      const inputs = await processor(promptText)
+      const inputs = await processor.tokenizer(promptText, { return_tensors: 'pt' })
       const streamer = new TextStreamer(processor.tokenizer, {
         skip_prompt: true, skip_special_tokens: true,
         callback_function: (token) => { tokens.push(token); self.postMessage({ type: 'token', token, id }) },
