@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=17'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=18'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -60,7 +60,7 @@ self.onmessage = async (e) => {
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
       model = await Qwen3ForCausalLM.from_pretrained(MODEL_ID, {
         dtype: DTYPE, device: 'wasm', progress_callback: progress,
-        model_file_name: 'decoder_model_merged_q4f16'
+        model_file_name: 'decoder_model_merged'
       })
       loading = false
       self.postMessage({ type: 'loaded', id })
