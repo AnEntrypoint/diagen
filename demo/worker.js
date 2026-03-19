@@ -32,8 +32,9 @@ self.fetch = async (input, init) => {
 }
 
 env.allowLocalModels = true
+env.allowRemoteModels = false
 env.localModelPath = './'
-env.remoteModels = false
+env.fetch = self.fetch
 
 const MODEL_ID = 'model'
 const DTYPE = { embed_tokens: 'q8', vision_encoder: 'q8', decoder_model_merged: 'q4' }
