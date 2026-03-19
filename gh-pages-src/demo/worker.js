@@ -1,34 +1,40 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=14'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=15'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
-  'decoder_model_merged_q4f16.onnx_data': { stem: 'decoder_model_merged_q4f16.onnx_data', parts: 5 },
-  'embed_tokens_quantized.onnx': { stem: 'embed_tokens_q8', parts: 3 },
+  'decoder_model_merged_q4f16.onnx_data': {
+    stem: 'decoder_model_merged_q4f16.onnx_data',
+    sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
+  },
+  'embed_tokens_quantized.onnx': {
+    stem: 'embed_tokens_q8',
+    sizes: [103809024, 103809024, 46662328]
+  },
 }
 
 self.addEventListener('unhandledrejection', (e) => {
   self.postMessage({ type: 'error', message: String(e.reason?.message || e.reason || e) })
 })
 
-async function fetchChunked(stem, parts) {
-  const buffers = await Promise.all(
-    Array.from({ length: parts }, (_, i) =>
-      fetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
-    )
-  )
-  const total = buffers.reduce((s, b) => s + b.byteLength, 0)
+async function fetchChunked(stem, sizes) {
+  const total = sizes.reduce((s, n) => s + n, 0)
   const out = new Uint8Array(total)
   let off = 0
-  for (const b of buffers) { out.set(new Uint8Array(b), off); off += b.byteLength }
+  for (let i = 0; i < sizes.length; i++) {
+    let buf = await fetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
+    out.set(new Uint8Array(buf), off)
+    off += buf.byteLength
+    buf = null
+  }
   return out.buffer
 }
 
 const origFetch = self.fetch.bind(self)
 self.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url
-  for (const [fname, { stem, parts }] of Object.entries(CHUNKS)) {
+  for (const [fname, { stem, sizes }] of Object.entries(CHUNKS)) {
     if (url.endsWith(fname)) {
-      const buf = await fetchChunked(stem, parts)
+      const buf = await fetchChunked(stem, sizes)
       return new Response(buf, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
     }
   }
