@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=10'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=11'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -58,7 +58,7 @@ self.onmessage = async (e) => {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
       model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
-        dtype: DTYPE, device: 'wasm', num_threads: 1, progress_callback: progress
+        dtype: DTYPE, device: 'wasm', progress_callback: progress
       })
       loading = false
       self.postMessage({ type: 'loaded', id })
