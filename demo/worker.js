@@ -32,7 +32,7 @@ self.fetch = async (input, init) => {
 }
 
 env.allowLocalModels = true
-env.localModelPath = MODEL_BASE + '/'
+env.localModelPath = './'
 env.remoteModels = false
 
 const MODEL_ID = 'model'
