@@ -21,3 +21,4 @@ onnx-cache/
 onnx-export-venv/
 *.py
 *.err
+*.png
