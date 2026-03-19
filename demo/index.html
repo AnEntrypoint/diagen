@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qwen3 Voice Chat — diagen</title>
+  <script>window.coi = { coepCredentialless: () => true }</script>
+  <script src="./coi-serviceworker.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f0f13;
+      color: #e8e8f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100dvh;
+      padding: 1rem;
+    }
+    .back-link {
+      align-self: flex-start;
+      font-size: 0.85rem;
+      color: #888;
+      text-decoration: none;
+      margin-bottom: 1rem;
+    }
+    .back-link:hover { color: #a78bfa }
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.5rem; color: #a78bfa }
+    #progress-wrap {
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 1rem;
+      background: #1e1e2e;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid #2d2d3f;
+    }
+    #progress-text { font-size: 0.75rem; padding: 0.4rem 0.6rem; color: #888 }
+    #progress-track { height: 4px; background: #2d2d3f }
+    #progress-bar { height: 4px; width: 0%; background: #a78bfa; transition: width 0.3s }
+    #chat {
+      width: 100%;
+      max-width: 600px;
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 0.5rem 0;
+      min-height: 300px;
+      max-height: calc(100dvh - 220px);
+    }
+    .bubble {
+      max-width: 80%;
+      padding: 0.6rem 0.9rem;
+      border-radius: 14px;
+      line-height: 1.5;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .bubble.user {
+      background: #4c1d95;
+      color: #ede9fe;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.assistant {
+      background: #1e1e2e;
+      color: #e8e8f0;
+      align-self: flex-start;
+      border: 1px solid #2d2d3f;
+      border-bottom-left-radius: 4px;
+    }
+    #controls {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 1rem;
+    }
+    #speak-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: none;
+      background: #6d28d9;
+      color: #fff;
+      font-size: 1.8rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #speak-btn:disabled { background: #3b3b52; cursor: not-allowed }
+    #speak-btn.recording { background: #dc2626; animation: pulse 1s infinite }
+    #speak-btn:not(:disabled):hover { background: #7c3aed }
+    @keyframes pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.08) } }
+    #status {
+      font-size: 0.85rem;
+      color: #888;
+      text-align: center;
+      min-height: 1.2em;
+    }
+    #voice-wrap {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    #voice-wrap label { font-size: 0.75rem; color: #666; white-space: nowrap; }
+    #voice-select {
+      flex: 1;
+      background: #1e1e2e;
+      border: 1px solid #2d2d3f;
+      border-radius: 6px;
+      color: #e8e8f0;
+      font-size: 0.85rem;
+      padding: 0.3rem 0.5rem;
+      outline: none;
+      cursor: pointer;
+    }
+    #voice-select:focus { border-color: #6d28d9 }
+    #character-wrap {
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 0.75rem;
+    }
+    #character-wrap label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 0.3rem;
+    }
+    #sheet-mic-btn {
+      background: none;
+      border: 1px solid #2d2d3f;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      color: #888;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.15s;
+    }
+    #sheet-mic-btn:hover { background: #2d2d3f }
+    #sheet-mic-btn.recording { background: #dc2626; border-color: #dc2626; color: #fff }
+    #character-sheet {
+      width: 100%;
+      background: #1e1e2e;
+      border: 1px solid #2d2d3f;
+      border-radius: 6px;
+      color: #e8e8f0;
+      font-size: 0.85rem;
+      font-family: system-ui, sans-serif;
+      padding: 0.5rem 0.7rem;
+      resize: vertical;
+      min-height: 60px;
+      max-height: 160px;
+      outline: none;
+    }
+    #character-sheet:focus { border-color: #6d28d9 }
+    #persona-btn {
+      margin-top: 0.4rem;
+      width: 100%;
+      background: #1e1e2e;
+      border: 1px solid #2d2d3f;
+      border-radius: 6px;
+      color: #a78bfa;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.6rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #persona-btn:hover:not(:disabled) { background: #2d2d3f }
+    #persona-btn:disabled { color: #555; cursor: not-allowed }
+  </style>
+</head>
+<body>
+  <a href="../" class="back-link">&#8592; Back to diagen</a>
+  <h1>Qwen3 Voice Chat</h1>
+  <div id="progress-wrap">
+    <div id="progress-text">Initializing…</div>
+    <div id="progress-track"><div id="progress-bar"></div></div>
+  </div>
+  <div id="voice-wrap" hidden>
+    <label for="voice-select">Voice</label>
+    <select id="voice-select"></select>
+  </div>
+  <div id="character-wrap">
+    <label for="character-sheet">Character sheet <button id="sheet-mic-btn" title="Describe changes by voice">🎤</button></label>
+    <textarea id="character-sheet" placeholder="Describe the character's name, personality, speaking style, and rules…"></textarea>
+    <button id="persona-btn" disabled>Generate Persona</button>
+  </div>
+  <div id="chat"></div>
+  <div id="controls">
+    <button id="speak-btn" disabled title="Click to speak">🎤</button>
+    <div id="status">Loading model…</div>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
