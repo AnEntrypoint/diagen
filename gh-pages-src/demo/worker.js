@@ -1,8 +1,8 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=20'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=21'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
-  'decoder_model_merged_q4f16.onnx_data': {
+  'decoder_model_merged_weights.bin': {
     stem: 'decoder_model_merged_q4f16.onnx_data',
     sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
   },
