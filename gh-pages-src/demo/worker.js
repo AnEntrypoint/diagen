@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=21'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=22'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -21,11 +21,13 @@ async function fetchChunked(stem, sizes) {
   const out = new Uint8Array(total)
   let off = 0
   for (let i = 0; i < sizes.length; i++) {
-    let buf = await fetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
+    self.postMessage({ type: 'progress', progress: { progress: Math.round(off / total * 80), file: `${stem}.part${i}` } })
+    let buf = await origFetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
     out.set(new Uint8Array(buf), off)
     off += buf.byteLength
     buf = null
   }
+  self.postMessage({ type: 'progress', progress: { progress: 82, file: stem } })
   return out.buffer
 }
 
