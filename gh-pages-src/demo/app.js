@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=21', { type: 'module' })
+const worker = new Worker('./worker.js?v=22', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -82,7 +82,7 @@ ttsWorker.onmessage = (e) => {
     $('voice-wrap').hidden = e.data.voices.length <= 1
   } else if (type === 'loaded') {
     ttsReady = true; ttsLoading = false
-    $('progress-wrap').hidden = true
+    if (modelReady) $('progress-wrap').hidden = true
     ttsReadyResolvers.forEach(r => r(true)); ttsReadyResolvers = []
   } else if (type === 'status' && ttsLoading && !ttsReady) {
     $('progress-wrap').hidden = false; $('progress-text').textContent = e.data.status
