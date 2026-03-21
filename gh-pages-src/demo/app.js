@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=22', { type: 'module' })
+const worker = new Worker('./worker.js?v=23', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -45,7 +45,7 @@ worker.onmessage = (e) => {
   if (type === 'error') r.reject(new Error(message)); else r.resolve(e.data)
 }
 worker.onerror = (e) => {
-  const msg = e.message || 'Worker crashed (out of memory?)'
+  const msg = [e.message, e.filename, e.lineno, e.colno, String(e.error)].filter(Boolean).join(' | ') || 'Worker crashed (out of memory?)'
   Object.values(pendingResolvers).forEach(r => r.reject(new Error(msg)))
   Object.keys(pendingResolvers).forEach(k => delete pendingResolvers[k])
   $('progress-wrap').hidden = true
