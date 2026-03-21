@@ -1,10 +1,14 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=27'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=28'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
   'decoder_model_merged_q4f16.onnx': {
     stem: 'decoder_model_merged_q4f16.onnx',
     sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
+  },
+  'embed_tokens_quantized.onnx': {
+    stem: 'embed_tokens_q8',
+    sizes: [103809024, 103809024, 46662328]
   },
 }
 
@@ -58,7 +62,7 @@ const cacheBust = (async () => {
 })()
 
 const MODEL_ID = 'model'
-const DTYPE = { 'decoder_model_merged': 'q4f16' }
+const DTYPE = { embed_tokens: 'q8', decoder_model_merged: 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null
