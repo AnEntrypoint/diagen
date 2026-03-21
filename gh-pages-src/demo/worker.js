@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=19'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=20'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -9,7 +9,11 @@ const CHUNKS = {
 }
 
 self.addEventListener('unhandledrejection', (e) => {
-  self.postMessage({ type: 'error', message: String(e.reason?.message || e.reason || e) })
+  const msg = e.reason?.message || (e.reason instanceof Error ? e.reason.toString() : null) || (typeof e.reason === 'string' ? e.reason : null) || JSON.stringify(e.reason) || String(e)
+  self.postMessage({ type: 'error', message: 'unhandled: ' + msg })
+})
+self.addEventListener('error', (e) => {
+  self.postMessage({ type: 'error', message: 'worker-error: ' + (e.message || String(e)) })
 })
 
 async function fetchChunked(stem, sizes) {
