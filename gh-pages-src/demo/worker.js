@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=24'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=25'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -48,6 +48,7 @@ env.allowLocalModels = true
 env.allowRemoteModels = false
 env.localModelPath = './'
 env.fetch = self.fetch
+env.backends.onnx.wasm.numThreads = 1
 
 const MODEL_ID = 'model'
 const DTYPE = { 'decoder_model_merged': 'q4f16' }
