@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=26'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=27'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -9,11 +9,8 @@ const CHUNKS = {
 }
 
 self.addEventListener('unhandledrejection', (e) => {
-  const msg = e.reason?.message || (e.reason instanceof Error ? e.reason.toString() : null) || (typeof e.reason === 'string' ? e.reason : null) || JSON.stringify(e.reason) || String(e)
-  self.postMessage({ type: 'error', message: 'unhandled: ' + msg })
-})
-self.addEventListener('error', (e) => {
-  self.postMessage({ type: 'error', message: 'worker-error: ' + (e.message || String(e)) })
+  const msg = e.reason?.message || (typeof e.reason === 'string' ? e.reason : null) || JSON.stringify(e.reason) || String(e)
+  self.postMessage({ type: 'error', message: msg })
 })
 
 async function fetchChunked(stem, sizes) {
@@ -34,7 +31,6 @@ async function fetchChunked(stem, sizes) {
 const origFetch = self.fetch.bind(self)
 self.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url
-  self.postMessage({ type: 'progress', progress: { progress: 0, file: 'fetch:' + url.split('/').slice(-2).join('/') } })
   for (const [fname, { stem, sizes }] of Object.entries(CHUNKS)) {
     if (url.endsWith(fname)) {
       const buf = await fetchChunked(stem, sizes)
@@ -50,6 +46,17 @@ env.localModelPath = './'
 env.fetch = self.fetch
 env.backends.onnx.wasm.numThreads = 1
 
+// Bust stale transformers-cache entries for chunked files we serve ourselves
+const cacheBust = (async () => {
+  try {
+    const c = await caches.open('transformers-cache')
+    const keys = await c.keys()
+    for (const k of keys) {
+      if (Object.keys(CHUNKS).some(fn => k.url.endsWith(fn))) await c.delete(k)
+    }
+  } catch(e) {}
+})()
+
 const MODEL_ID = 'model'
 const DTYPE = { 'decoder_model_merged': 'q4f16' }
 
@@ -63,6 +70,7 @@ self.onmessage = async (e) => {
     if (model) { self.postMessage({ type: 'loaded', id }); return }
     if (loading) return
     loading = true
+    await cacheBust
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
