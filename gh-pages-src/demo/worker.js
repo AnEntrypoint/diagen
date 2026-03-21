@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=22'
+import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=23'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
