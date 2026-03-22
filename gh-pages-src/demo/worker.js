@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=29'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=30'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -95,6 +95,8 @@ self.onmessage = async (e) => {
     if (!model) { self.postMessage({ type: 'error', message: loadError ?? 'Model not loaded', id }); return }
     const { messages, config = {} } = e.data
     try {
+      const dbg = { modelType: model.config?.model_type, sessions: Object.keys(model.sessions || {}), hasFwd: typeof model._forward }
+      self.postMessage({ type: 'debug', dbg, id })
       const tokens = []
       const formatted = messages.map(m => ({ role: m.role, content: [{ type: 'text', text: m.content }] }))
       const promptText = processor.apply_chat_template(formatted, { add_generation_prompt: config.addGenerationPrompt !== false, tokenize: false })
