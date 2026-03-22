@@ -5,7 +5,7 @@ const synth = window.speechSynthesis
 const $ = (id) => document.getElementById(id)
 const history = []
 let pendingResolvers = {}, msgId = 0, appState = 'loading'
-let modelReady = false, ttsReady = false, ttsLoading = true
+let modelReady = false, modelLoadDone = false, ttsReady = false, ttsLoading = true
 let ttsReadyResolvers = [], ttsChunkResolve = null, ttsChunkReject = null, ttsChunks = []
 let audioCtx = null, personaHistory = [], personaPrefill = null, personaDesc = '', recognition = null
 function nextId() { return ++msgId }
@@ -39,6 +39,12 @@ worker.onmessage = (e) => {
     return
   }
   if (type === 'token') { const last = $('chat').querySelector('.bubble.assistant:last-child'); if (last) last.textContent += token; return }
+  if (type === 'error' && id == null) {
+    const msg = message || 'Worker error'
+    Object.values(pendingResolvers).forEach(r => r.reject(new Error(msg)))
+    Object.keys(pendingResolvers).forEach(k => delete pendingResolvers[k])
+    return
+  }
   const r = pendingResolvers[id]
   if (!r) return
   delete pendingResolvers[id]
@@ -110,8 +116,8 @@ ttsWorker.postMessage({ type: 'load' })
 async function loadModel() {
   if (!SpeechRecognition) { $('status').textContent = 'Web Speech API not supported in this browser (use Chrome/Edge)'; $('speak-btn').disabled = true; return }
   setState('mic_only'); $('progress-wrap').hidden = false
-  try { const r = await sendWorker({ type: 'load' }); modelReady = true; $('progress-wrap').hidden = true; $('persona-btn').disabled = false; setState('idle'); if (r?.device) $('status').textContent = `Ready — click Speak (${r.device})` }
-  catch (err) { $('progress-wrap').hidden = true; $('status').textContent = `Model load failed: ${err.message} — mic still available` }
+  try { const r = await sendWorker({ type: 'load' }); modelReady = true; modelLoadDone = true; $('progress-wrap').hidden = true; $('persona-btn').disabled = false; setState('idle'); if (r?.device) $('status').textContent = `Ready — click Speak (${r.device})` }
+  catch (err) { modelLoadDone = true; $('progress-wrap').hidden = true; $('status').textContent = `Model load failed: ${err.message} — mic still available` }
 }
 async function speak(text) {
   if (ttsLoading && !ttsReady) $('status').textContent = 'TTS loading… (first run takes ~1 min)'
@@ -140,8 +146,8 @@ $('speak-btn').addEventListener('click', async () => {
   if (appState === 'generating' || appState === 'speaking' || appState === 'recording') return
   setState('recording')
   let transcript = ''
-  try { transcript = await startRecognition() } catch (err) { $('status').textContent = `Mic error: ${err.message}`; setState(modelReady ? 'idle' : 'mic_only'); return }
-  if (!transcript) { setState(modelReady ? 'idle' : 'mic_only'); return }
+  try { transcript = await startRecognition() } catch (err) { $('status').textContent = `Mic error: ${err.message}`; setState(modelReady ? 'idle' : (modelLoadDone ? 'idle' : 'mic_only')); return }
+  if (!transcript) { setState(modelReady ? 'idle' : (modelLoadDone ? 'idle' : 'mic_only')); return }
   addBubble('user', transcript)
   if (!modelReady) {
     $('status').textContent = 'Model loading — waiting…'
@@ -173,7 +179,7 @@ $('sheet-mic-btn').addEventListener('click', async () => {
   const btn = $('sheet-mic-btn'); btn.classList.add('recording'); const prevStatus = $('status').textContent; $('status').textContent = 'Listening…'
   let transcript = ''; try { transcript = await startRecognition() } catch (err) { $('status').textContent = `Mic error: ${err.message}`; btn.classList.remove('recording'); return }
   btn.classList.remove('recording'); if (!transcript) { $('status').textContent = prevStatus; return }
-  if (!modelReady) { $('status').textContent = 'Model still loading — try again shortly'; return }
+  if (!modelReady) { $('status').textContent = modelLoadDone ? 'Model unavailable' : 'Model still loading — try again shortly'; return }
   const existing = $('character-sheet').value.trim(); $('status').textContent = 'Updating character sheet…'
   const examples = '"a seductive demon who speaks in honeyed whispers and twists every offer into a dark bargain"\n"an ancient predatory vampire who thirsts for blood above all else, speaks in cold hungry tones, and steers every conversation toward feeding"\n"a cheerful plague doctor obsessed with disease who treats death as a fascinating experiment"'
   const firstWords = transcript.trim().replace(/^(a|an|the)\s+/i,'').split(/\s+/).slice(0,4).join(' ')
@@ -212,7 +218,7 @@ async function buildPersonaHistory(desc) {
 $('persona-btn').addEventListener('click', async () => {
   const sheet = $('character-sheet').value.trim()
   if (!sheet) { $('status').textContent = 'Enter a character sheet first'; return }
-  if (!modelReady) { $('status').textContent = 'Model still loading'; return }
+  if (!modelReady) { $('status').textContent = modelLoadDone ? 'Model unavailable' : 'Model still loading'; return }
   $('persona-btn').disabled = true
   const desc = sheet.replace(/^(i am|i'm|name:|character:)\s*/i, '').trim()
   personaDesc = desc; history.length = 0
