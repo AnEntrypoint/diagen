@@ -143,7 +143,12 @@ $('speak-btn').addEventListener('click', async () => {
   try { transcript = await startRecognition() } catch (err) { $('status').textContent = `Mic error: ${err.message}`; setState(modelReady ? 'idle' : 'mic_only'); return }
   if (!transcript) { setState(modelReady ? 'idle' : 'mic_only'); return }
   addBubble('user', transcript)
-  if (!modelReady) { $('status').textContent = 'Model still loading — please wait and try again'; return }
+  if (!modelReady) {
+    $('status').textContent = 'Model loading — waiting…'
+    await new Promise(resolve => {
+      const check = setInterval(() => { if (modelReady) { clearInterval(check); resolve() } }, 500)
+    })
+  }
   history.push({ role: 'user', content: transcript })
   setState('generating'); addBubble('assistant', '')
   try {
