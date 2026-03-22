@@ -18,29 +18,31 @@ self.addEventListener('unhandledrejection', (e) => {
   self.postMessage({ type: 'error', message: msg })
 })
 
-async function fetchChunked(stem, sizes) {
+function fetchChunked(stem, sizes) {
   const total = sizes.reduce((s, n) => s + n, 0)
-  const out = new Uint8Array(total)
-  let off = 0
-  for (let i = 0; i < sizes.length; i++) {
-    self.postMessage({ type: 'progress', progress: { progress: Math.round(off / total * 80), file: `${stem}.part${i}` } })
-    let buf = await origFetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
-    out.set(new Uint8Array(buf), off)
-    off += buf.byteLength
-    buf = null
-  }
-  self.postMessage({ type: 'progress', progress: { progress: 82, file: stem } })
-  return out.buffer
+  let idx = 0, off = 0
+  const stream = new ReadableStream({
+    async pull(controller) {
+      if (idx >= sizes.length) {
+        self.postMessage({ type: 'progress', progress: { progress: 82, file: stem } })
+        controller.close(); return
+      }
+      const i = idx++
+      self.postMessage({ type: 'progress', progress: { progress: Math.round(off / total * 80), file: `${stem}.part${i}` } })
+      let buf = await origFetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
+      off += buf.byteLength
+      controller.enqueue(new Uint8Array(buf))
+      buf = null
+    }
+  })
+  return new Response(stream, { status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(total) } })
 }
 
 const origFetch = self.fetch.bind(self)
 self.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url
   for (const [fname, { stem, sizes }] of Object.entries(CHUNKS)) {
-    if (url.endsWith(fname)) {
-      const buf = await fetchChunked(stem, sizes)
-      return new Response(buf, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
-    }
+    if (url.endsWith(fname)) return fetchChunked(stem, sizes)
   }
   if (url.endsWith('vision_encoder_quantized.onnx')) {
     const bin = Uint8Array.from(atob(VISION_ENCODER_STUB), c => c.charCodeAt(0))
