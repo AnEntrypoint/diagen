@@ -13,6 +13,13 @@
       "fp16": "float16"
     }
   },
+  "vision_config": {
+    "spatial_merge_size": 2,
+    "model_type": "qwen3_5_vl_vision"
+  },
+  "image_token_id": 151655,
+  "video_token_id": 151656,
+  "vision_start_token_id": 151652,
   "text_config": {
     "model_type": "qwen3_vl_text",
     "attention_bias": false,
