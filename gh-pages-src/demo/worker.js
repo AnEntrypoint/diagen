@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=35'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=36'
 
 const MODEL_BASE = './model'
 const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
@@ -76,7 +76,14 @@ const MODEL_ID = 'model'
 const DTYPE = { embed_tokens: 'q8', vision_encoder: 'q8', decoder_model_merged: 'q4f16' }
 
 let model = null, processor = null
-let loading = false, loadError = null
+let loading = false, loadError = null, activeDevice = 'wasm'
+
+async function tryLoadModel(device, progress) {
+  return Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
+    dtype: DTYPE, device, progress_callback: progress,
+    model_file_name: 'decoder_model_merged'
+  })
+}
 
 self.onmessage = async (e) => {
   const { type, id } = e.data
@@ -89,12 +96,16 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
-        dtype: DTYPE, device: 'wasm', progress_callback: progress,
-        model_file_name: 'decoder_model_merged'
-      })
+      try {
+        model = await tryLoadModel('webgpu', progress)
+        activeDevice = 'webgpu'
+      } catch (gpuErr) {
+        self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message.slice(0,60)}), falling back to WASM…` } })
+        model = await tryLoadModel('wasm', progress)
+        activeDevice = 'wasm'
+      }
       loading = false
-      self.postMessage({ type: 'loaded', id })
+      self.postMessage({ type: 'loaded', id, device: activeDevice })
     } catch (err) {
       loading = false; loadError = err.message
       self.postMessage({ type: 'error', message: err.message, id })

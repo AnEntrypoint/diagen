@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=35', { type: 'module' })
+const worker = new Worker('./worker.js?v=36', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -110,7 +110,7 @@ ttsWorker.postMessage({ type: 'load' })
 async function loadModel() {
   if (!SpeechRecognition) { $('status').textContent = 'Web Speech API not supported in this browser (use Chrome/Edge)'; $('speak-btn').disabled = true; return }
   setState('mic_only'); $('progress-wrap').hidden = false
-  try { await sendWorker({ type: 'load' }); modelReady = true; $('progress-wrap').hidden = true; $('persona-btn').disabled = false; setState('idle') }
+  try { const r = await sendWorker({ type: 'load' }); modelReady = true; $('progress-wrap').hidden = true; $('persona-btn').disabled = false; setState('idle'); if (r?.device) $('status').textContent = `Ready — click Speak (${r.device})` }
   catch (err) { $('progress-wrap').hidden = true; $('status').textContent = `Model load failed: ${err.message} — mic still available` }
 }
 async function speak(text) {
