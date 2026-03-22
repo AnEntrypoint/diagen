@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=39', { type: 'module' })
+const worker = new Worker('./worker.js?v=40', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -170,10 +170,14 @@ $('sheet-mic-btn').addEventListener('click', async () => {
   btn.classList.remove('recording'); if (!transcript) { $('status').textContent = prevStatus; return }
   if (!modelReady) { $('status').textContent = 'Model still loading — try again shortly'; return }
   const existing = $('character-sheet').value.trim(); $('status').textContent = 'Updating character sheet…'
-  const prompt = existing ? `Rewrite this AI persona description based on the instruction.\nCurrent: ${existing}\nInstruction: ${transcript}\nWrite one short plain-text sentence describing who this character is and how they speak. No markdown, no stats, no headers. Example: "a grumpy old wizard who speaks in riddles and hates being interrupted"` : `Write one short plain-text sentence describing this AI persona: ${transcript}\nNo markdown, no stats, no headers. Example: "a grumpy old wizard who speaks in riddles and hates being interrupted"`
+  const examples = '"a seductive demon who speaks in honeyed whispers and twists every offer into a dark bargain"\n"an ancient predatory vampire who thirsts for blood above all else, speaks in cold hungry tones, and steers every conversation toward feeding"\n"a cheerful plague doctor obsessed with disease who treats death as a fascinating experiment"'
+  const firstWords = transcript.trim().replace(/^(a|an|the)\s+/i,'').split(/\s+/).slice(0,4).join(' ')
+  const prefill = `a ${firstWords} who`
+  const prompt = existing ? `Rewrite this roleplay character description based on the instruction. Capture their obsession, personality, and speaking style in one vivid sentence. Plain text only.\n\nExamples:\n${examples}\n\nCurrent: ${existing}\nInstruction: ${transcript}\nDescription:` : `Complete this roleplay character description in one vivid sentence capturing their obsession and speaking style. Plain text only.\n\nExamples:\n${examples}\n\nCharacter: ${transcript}\nDescription: ${prefill}`
   try {
-    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'user', content: prompt }], config: { maxNewTokens: 60, temperature: 0.5 } })
-    $('character-sheet').value = text.trim().replace(/^#+\s+.*$/mg, '').replace(/^\*+\s+/mg, '').replace(/\*\*/g, '').replace(/\n+/g, ' ').trim()
+    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'user', content: prompt }], config: { maxNewTokens: 80, temperature: 0.7 } })
+    const cleaned = text.split('\n')[0].trim().replace(/^#+\s+.*$/mg, '').replace(/^\*+\s+/mg, '').replace(/\*\*/g, '').trim()
+    $('character-sheet').value = existing ? cleaned : (prefill + cleaned)
     personaHistory = []; personaPrefill = null; personaDesc = ''; $('persona-btn').textContent = 'Generate Persona'
   } catch (err) { $('status').textContent = `Error: ${err.message}`; return }
   $('status').textContent = prevStatus
