@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=31'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=32'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -40,6 +40,12 @@ self.fetch = async (input, init) => {
       const buf = await fetchChunked(stem, sizes)
       return new Response(buf, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
     }
+  }
+  if (url.endsWith('/model/config.json')) {
+    const resp = await origFetch(input, init)
+    const json = await resp.json()
+    json['transformers.js_config'] = {}
+    return new Response(JSON.stringify(json), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
   return origFetch(input, init)
 }
