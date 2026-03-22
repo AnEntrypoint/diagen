@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=30'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=31'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -50,13 +50,13 @@ env.localModelPath = './'
 env.fetch = self.fetch
 env.backends.onnx.wasm.numThreads = 1
 
-// Bust stale transformers-cache entries for chunked files we serve ourselves
+// Bust stale transformers-cache entries for ALL model files
 const cacheBust = (async () => {
   try {
     const c = await caches.open('transformers-cache')
     const keys = await c.keys()
     for (const k of keys) {
-      if (Object.keys(CHUNKS).some(fn => k.url.endsWith(fn))) await c.delete(k)
+      if (k.url.includes('/model/')) await c.delete(k)
     }
   } catch(e) {}
 })()
