@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=32', { type: 'module' })
+const worker = new Worker('./worker.js?v=33', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -39,7 +39,6 @@ worker.onmessage = (e) => {
     return
   }
   if (type === 'token') { const last = $('chat').querySelector('.bubble.assistant:last-child'); if (last) last.textContent += token; return }
-  if (type === 'debug') { console.log('[worker debug]', JSON.stringify(e.data.dbg)); return }
   const r = pendingResolvers[id]
   if (!r) return
   delete pendingResolvers[id]
