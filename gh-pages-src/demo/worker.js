@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=36'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=37'
 
 const MODEL_BASE = './model'
 const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
@@ -60,6 +60,7 @@ env.allowRemoteModels = false
 env.localModelPath = './'
 env.fetch = self.fetch
 env.backends.onnx.wasm.numThreads = 4
+env.backends.onnx.wasm.wasmPaths = { mjs: './ort/ort-wasm-simd-threaded.asyncify.mjs', wasm: './ort/ort-wasm-simd-threaded.asyncify.wasm' }
 
 // Bust stale transformers-cache entries for JSON config files only (ONNX files are immutable)
 const cacheBust = (async () => {
