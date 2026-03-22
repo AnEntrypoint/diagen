@@ -150,9 +150,9 @@ $('speak-btn').addEventListener('click', async () => {
     let messages, genConfig
     if (personaDesc) {
       const wrapped = history.map(m => m.role === 'user' ? { role: 'user', content: `Roleplay as ${personaDesc}. User says: "${m.content}". Your reply as this character:` } : m)
-      messages = [...personaHistory, ...wrapped]; genConfig = { maxNewTokens: 80, temperature: 0.9 }
+      messages = [...personaHistory, ...wrapped]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
     } else {
-      messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 80, temperature: 0.7 }
+      messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
     const { text } = await sendWorker({ type: 'generate', messages, config: genConfig })
     const cleaned = text.trim()
@@ -181,17 +181,10 @@ $('sheet-mic-btn').addEventListener('click', async () => {
 const PERSONA_QUESTIONS = [
   'who are you',
   'what do you want from me',
-  'how long have you existed',
   'do you feel anything',
   'are you dangerous',
-  'what is it like to be you',
   'do you have a name',
-  'what do you think of humans',
-  'have you ever loved someone',
   'what do you fear',
-  'what would you do to me right now',
-  'have you killed before',
-  'are you an AI',
   'what happens next'
 ]
 async function buildPersonaHistory(desc) {
