@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3ForCausalLM, TextStreamer, env } from './transformers.min.js?v=28'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=29'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -62,7 +62,7 @@ const cacheBust = (async () => {
 })()
 
 const MODEL_ID = 'model'
-const DTYPE = { embed_tokens: 'q8', decoder_model_merged: 'q4f16' }
+const DTYPE = { embed_tokens: 'q8', vision_encoder: 'q8', decoder_model_merged: 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null
@@ -78,7 +78,7 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      model = await Qwen3ForCausalLM.from_pretrained(MODEL_ID, {
+      model = await Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
         dtype: DTYPE, device: 'wasm', progress_callback: progress,
         model_file_name: 'decoder_model_merged'
       })
