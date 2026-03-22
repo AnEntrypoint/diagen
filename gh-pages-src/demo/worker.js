@@ -1,4 +1,4 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=38'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=39'
 
 const MODEL_BASE = './model'
 const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
@@ -77,12 +77,26 @@ const DTYPE = { embed_tokens: 'q8', vision_encoder: 'q8', decoder_model_merged: 
 
 let model = null, processor = null
 let loading = false, loadError = null, activeDevice = 'wasm'
+// KV cache: { inputIds: BigInt64Array, pastKeyValues: object }
+let kvcache = null
 
 async function tryLoadModel(device, progress) {
   return Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
     dtype: DTYPE, device, progress_callback: progress,
     model_file_name: 'decoder_model_merged'
   })
+}
+
+function cacheKey(ids) { return ids.join(',') }
+
+function findCachePrefix(inputIds) {
+  if (!kvcache) return null
+  const cached = kvcache.inputIds
+  if (cached.length >= inputIds.length) return null
+  for (let i = 0; i < cached.length; i++) {
+    if (cached[i] !== inputIds[i]) return null
+  }
+  return kvcache
 }
 
 self.onmessage = async (e) => {
@@ -120,14 +134,29 @@ self.onmessage = async (e) => {
       const tokens = []
       const formatted = messages.map(m => ({ role: m.role, content: [{ type: 'text', text: m.content }] }))
       const promptText = processor.apply_chat_template(formatted, { add_generation_prompt: config.addGenerationPrompt !== false, tokenize: false })
-      const inputs = await processor.tokenizer(promptText, { return_tensors: 'pt' })
+      const { input_ids, attention_mask } = await processor.tokenizer(promptText, { return_tensors: 'pt' })
+      const inputArr = Array.from(input_ids.data)
+      const hit = findCachePrefix(inputArr)
       const streamer = new TextStreamer(processor.tokenizer, {
         skip_prompt: true, skip_special_tokens: true,
         callback_function: (token) => { tokens.push(token); self.postMessage({ type: 'token', token, id }) },
       })
-      await model.generate({ ...inputs, max_new_tokens: config.maxNewTokens ?? 300, temperature: config.temperature ?? 0.7, repetition_penalty: config.repetitionPenalty ?? 1.0, do_sample: true, streamer })
+      const genArgs = { max_new_tokens: config.maxNewTokens ?? 300, temperature: config.temperature ?? 0.7, repetition_penalty: config.repetitionPenalty ?? 1.0, do_sample: true, streamer, return_dict_in_generate: true }
+      let result
+      if (hit) {
+        const newIds = input_ids.slice(null, [hit.inputIds.length, null])
+        const newMask = attention_mask.slice(null, [hit.inputIds.length, null])
+        result = await model.generate({ input_ids: newIds, attention_mask: newMask, past_key_values: hit.pastKeyValues, ...genArgs })
+      } else {
+        result = await model.generate({ input_ids, attention_mask, ...genArgs })
+      }
+      // Cache the full prompt KV state for next turn reuse
+      if (result.past_key_values) {
+        kvcache = { inputIds: inputArr, pastKeyValues: result.past_key_values }
+      }
       self.postMessage({ type: 'result', text: tokens.join(''), id })
     } catch (err) {
+      kvcache = null
       self.postMessage({ type: 'error', message: err.message, id })
     }
     return
