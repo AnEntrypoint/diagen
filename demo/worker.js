@@ -1,6 +1,7 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=33'
+import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=34'
 
 const MODEL_BASE = './model'
+const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
 const CHUNKS = {
   'decoder_model_merged_q4f16.onnx': {
     stem: 'decoder_model_merged_q4f16.onnx',
@@ -41,6 +42,10 @@ self.fetch = async (input, init) => {
       return new Response(buf, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
     }
   }
+  if (url.endsWith('vision_encoder_quantized.onnx')) {
+    const bin = Uint8Array.from(atob(VISION_ENCODER_STUB), c => c.charCodeAt(0))
+    return new Response(bin.buffer, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
+  }
   if (url.endsWith('/model/config.json')) {
     const resp = await origFetch(input, init)
     const json = await resp.json()
@@ -56,13 +61,13 @@ env.localModelPath = './'
 env.fetch = self.fetch
 env.backends.onnx.wasm.numThreads = 1
 
-// Bust stale transformers-cache entries for ALL model files
+// Bust stale transformers-cache entries for JSON config files only (ONNX files are immutable)
 const cacheBust = (async () => {
   try {
     const c = await caches.open('transformers-cache')
     const keys = await c.keys()
     for (const k of keys) {
-      if (k.url.includes('/model/')) await c.delete(k)
+      if (k.url.includes('/model/') && k.url.endsWith('.json')) await c.delete(k)
     }
   } catch(e) {}
 })()
