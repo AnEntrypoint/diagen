@@ -3,7 +3,7 @@ import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } fro
 const MODEL_BASE = './model'
 const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
 const CHUNKS = {
-  'decoder_model_merged_q4f16.onnx_data': {
+  'decoder_model_merged_weights.bin': {
     stem: 'decoder_model_merged_q4f16.onnx',
     sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
   },
@@ -51,7 +51,7 @@ self.fetch = async (input, init) => {
   if (url.endsWith('/model/config.json')) {
     const resp = await origFetch(input, init)
     const json = await resp.json()
-    json['transformers.js_config'] = { use_external_data_format: { 'decoder_model_merged_q4f16.onnx': 1 } }
+    json['transformers.js_config'] = {}
     return new Response(JSON.stringify(json), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
   return origFetch(input, init)
@@ -85,7 +85,8 @@ let kvcache = null
 async function tryLoadModel(device, progress) {
   return Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
     dtype: DTYPE, device, progress_callback: progress,
-    model_file_name: 'decoder_model_merged'
+    model_file_name: 'decoder_model_merged',
+    session_options: { externalData: [{ path: 'decoder_model_merged_weights.bin', data: 'onnx/decoder_model_merged_weights.bin' }] }
   })
 }
 
