@@ -3,7 +3,7 @@ import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } fro
 const MODEL_BASE = './model'
 const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
 const CHUNKS = {
-  'decoder_model_merged_q4f16.onnx': {
+  'decoder_model_merged_weights.bin': {
     stem: 'decoder_model_merged_q4f16.onnx',
     sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
   },
