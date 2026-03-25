@@ -150,10 +150,12 @@ $('speak-btn').addEventListener('click', async () => {
   if (!transcript) { setState(modelReady ? 'idle' : (modelLoadDone ? 'idle' : 'mic_only')); return }
   addBubble('user', transcript)
   if (!modelReady) {
+    if (modelLoadDone) { setState('idle'); return }
     $('status').textContent = 'Model loading — waiting…'
     await new Promise(resolve => {
-      const check = setInterval(() => { if (modelReady) { clearInterval(check); resolve() } }, 500)
+      const check = setInterval(() => { if (modelReady || modelLoadDone) { clearInterval(check); resolve() } }, 500)
     })
+    if (!modelReady) { setState('idle'); return }
   }
   history.push({ role: 'user', content: transcript })
   setState('generating'); addBubble('assistant', '')
@@ -179,7 +181,14 @@ $('sheet-mic-btn').addEventListener('click', async () => {
   const btn = $('sheet-mic-btn'); btn.classList.add('recording'); const prevStatus = $('status').textContent; $('status').textContent = 'Listening…'
   let transcript = ''; try { transcript = await startRecognition() } catch (err) { $('status').textContent = `Mic error: ${err.message}`; btn.classList.remove('recording'); return }
   btn.classList.remove('recording'); if (!transcript) { $('status').textContent = prevStatus; return }
-  if (!modelReady) { $('status').textContent = modelLoadDone ? 'Model unavailable' : 'Model still loading — try again shortly'; return }
+  if (!modelReady) {
+    if (modelLoadDone) { $('status').textContent = 'Model unavailable'; btn.classList.remove('recording'); return }
+    $('status').textContent = 'Model loading — waiting…'
+    await new Promise(resolve => {
+      const check = setInterval(() => { if (modelReady || modelLoadDone) { clearInterval(check); resolve() } }, 500)
+    })
+    if (!modelReady) { $('status').textContent = 'Model unavailable'; btn.classList.remove('recording'); return }
+  }
   const existing = $('character-sheet').value.trim(); $('status').textContent = 'Updating character sheet…'
   const examples = '"a seductive demon who speaks in honeyed whispers and twists every offer into a dark bargain"\n"an ancient predatory vampire who thirsts for blood above all else, speaks in cold hungry tones, and steers every conversation toward feeding"\n"a cheerful plague doctor obsessed with disease who treats death as a fascinating experiment"'
   const firstWords = transcript.trim().replace(/^(a|an|the)\s+/i,'').split(/\s+/).slice(0,4).join(' ')
