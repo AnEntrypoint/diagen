@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "download-models": "node download-models.js"
+    "download-models": "node download-models.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -17,9 +19,12 @@
     "audio2afan": "^1.0.1",
     "express": "^5.2.1",
     "jszip": "^3.10.1",
+    "onnxruntime-node": "^1.24.1",
     "sttttsmodels": "file:../sttttsmodels",
     "three": "^0.182.0",
-    "webtalk": "^1.0.11",
-    "onnxruntime-node": "^1.24.1"
+    "webtalk": "^1.0.11"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.1"
   }
 }
