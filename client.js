@@ -15,6 +15,15 @@ class IdleAnimator {
       mouthPhase: Math.random() * Math.PI * 2,
       lookPhase: Math.random() * Math.PI * 2
     }
+
+    this.lookState = {
+      target: { x: 0, y: 0 },
+      current: { x: 0, y: 0 },
+      nextSaccade: Math.random() * 1.5 + 0.5,
+      saccadeTimer: 0,
+      bigLookTimer: 0,
+      nextBigLook: Math.random() * 4 + 3
+    }
   }
 
   update(deltaTime) {
@@ -50,10 +59,49 @@ class IdleAnimator {
       }
     }
 
-    const hasExpression = (name) => {
-      if (this.vrm.expressionManager) return this.vrm.expressionManager.expressions.some(e => e.expressionName === name)
-      if (this.vrm.blendShapeProxy) return this.vrm.blendShapeProxy.getExpressionNames().includes(name)
-      return false
+    this.lookState.saccadeTimer += deltaTime
+    this.lookState.bigLookTimer += deltaTime
+
+    if (this.lookState.bigLookTimer >= this.lookState.nextBigLook) {
+      this.lookState.target.x = (Math.random() - 0.5) * 1.2
+      this.lookState.target.y = (Math.random() - 0.5) * 0.8
+      this.lookState.bigLookTimer = 0
+      this.lookState.nextBigLook = Math.random() * 4 + 3
+    } else if (this.lookState.saccadeTimer >= this.lookState.nextSaccade) {
+      const saccadeStrength = Math.random() > 0.7 ? 0.4 : 0.15
+      this.lookState.target.x = clamp(this.lookState.target.x + (Math.random() - 0.5) * saccadeStrength, -0.8, 0.8)
+      this.lookState.target.y = clamp(this.lookState.target.y + (Math.random() - 0.5) * saccadeStrength * 0.6, -0.5, 0.5)
+      this.lookState.saccadeTimer = 0
+      this.lookState.nextSaccade = Math.random() * 0.8 + 0.2
+    }
+
+    const lookSpeed = 3.0
+    this.lookState.current.x += (this.lookState.target.x - this.lookState.current.x) * lookSpeed * deltaTime
+    this.lookState.current.y += (this.lookState.target.y - this.lookState.current.y) * lookSpeed * deltaTime
+
+    const lookX = this.lookState.current.x
+    const lookY = this.lookState.current.y
+
+    if (lookX > 0.1) {
+      expressions.set('lookRight', clamp(lookX))
+      expressions.set('lookLeft', 0)
+    } else if (lookX < -0.1) {
+      expressions.set('lookLeft', clamp(-lookX))
+      expressions.set('lookRight', 0)
+    } else {
+      expressions.set('lookLeft', 0)
+      expressions.set('lookRight', 0)
+    }
+
+    if (lookY > 0.1) {
+      expressions.set('lookUp', clamp(lookY))
+      expressions.set('lookDown', 0)
+    } else if (lookY < -0.1) {
+      expressions.set('lookDown', clamp(-lookY))
+      expressions.set('lookUp', 0)
+    } else {
+      expressions.set('lookUp', 0)
+      expressions.set('lookDown', 0)
     }
 
     return expressions
@@ -186,7 +234,7 @@ class FacialAnimationPlayer {
       this.lastApplied = new Map(values)
     } else if (this.vrmVersion === '0.0') {
       for (const [name, val] of idleExpressions) {
-        const vrm0Name = name === 'blink' ? 'Blink' : name === 'blinkLeft' ? 'Blink_L' : name === 'blinkRight' ? 'Blink_R' : name === 'neutral' ? 'Neutral' : name
+        const vrm0Name = name === 'blink' ? 'Blink' : name === 'blinkLeft' ? 'Blink_L' : name === 'blinkRight' ? 'Blink_R' : name === 'neutral' ? 'Neutral' : name === 'lookUp' ? 'LookUp' : name === 'lookDown' ? 'LookDown' : name === 'lookLeft' ? 'LookLeft' : name === 'lookRight' ? 'LookRight' : name
         if (has(vrm0Name)) this.blendProxy.setValue(vrm0Name, val)
       }
     }
