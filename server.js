@@ -32,7 +32,7 @@ const TTS_MODELS_DIR = path.join(__dirname, 'models', 'tts')
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')))
 app.get('/client.js', (req, res) => res.sendFile(path.join(__dirname, 'client.js')))
-app.get('/Cleetus.vrm', (req, res) => res.sendFile(path.join(__dirname, 'models/Cleetus.vrm')))
+app.get('/Cleetus.vrm', (req, res) => res.sendFile(path.join(__dirname, 'Cleetus.vrm')))
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')))
 
 const DEMO_DIR = path.join(__dirname, 'gh-pages-src', 'demo')
