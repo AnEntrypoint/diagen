@@ -240,8 +240,19 @@ const gltfLoader = new GLTFLoader()
 gltfLoader.register((parser) => new VRMLoaderPlugin(parser))
 
 async function loadVRM() {
+  console.log('[vrm] Starting to load Cleetus.vrm...')
   try {
-    const gltf = await gltfLoader.loadAsync('/Cleetus.vrm')
+    console.log('[vrm] Loading file from /Cleetus.vrm...')
+    const gltf = await gltfLoader.loadAsync('/Cleetus.vrm',
+      (xhr) => {
+        const percent = (xhr.loaded / xhr.total * 100).toFixed(0)
+        console.log(`[vrm] Loading progress: ${percent}% (${xhr.loaded}/${xhr.total})`)
+      },
+      (err) => {
+        console.error('[vrm] Loading error:', err)
+      }
+    )
+    console.log('[vrm] File loaded, extracting VRM data...')
     vrm = gltf.userData.vrm
     
     VRMUtils.removeUnnecessaryVertices(vrm.scene)
@@ -266,7 +277,8 @@ async function loadVRM() {
     setStatus('Ready', 'ready')
   } catch (err) {
     console.error('Failed to load VRM:', err)
-    loadingEl.innerHTML = `<div style="color: #ff6b6b;">Failed to load VRM: ${err.message}</div>`
+    console.error('Error stack:', err.stack)
+    loadingEl.innerHTML = `<div style="color: #ff6b6b;">Failed to load VRM: ${err.message}<br><pre style="font-size:10px;text-align:left;margin-top:8px;">${err.stack}</pre></div>`
   }
 }
 
