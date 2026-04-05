@@ -82,13 +82,6 @@ class IdleAnimator {
 			expressions.set("browOuterUpRight", clamp(browSubtle * 0.6));
 		}
 
-		if (mouthSubtle > 0.04) {
-			expressions.set("mouthSmileLeft", clamp(mouthSubtle * 0.5));
-			expressions.set("mouthSmileRight", clamp(mouthSubtle * 0.5));
-			expressions.set("mouthUpperUpLeft", clamp(mouthSubtle * 0.3));
-			expressions.set("mouthUpperUpRight", clamp(mouthSubtle * 0.3));
-		}
-
 		if (cheekSubtle > 0.05) {
 			expressions.set("cheekSquintLeft", clamp(cheekSubtle));
 			expressions.set("cheekSquintRight", clamp(cheekSubtle));
@@ -97,13 +90,6 @@ class IdleAnimator {
 		if (noseSubtle > 0.03) {
 			expressions.set("noseSneerLeft", clamp(noseSubtle));
 			expressions.set("noseSneerRight", clamp(noseSubtle));
-		}
-
-		if (Math.random() > 0.997) {
-			expressions.set("jawOpen", clamp(Math.random() * 0.15));
-			setTimeout(() => {
-				expressions.set("jawOpen", 0);
-			}, 200);
 		}
 
 		const eyeWideChance = Math.sin(this.time * 0.5) * 0.5 + 0.5;
@@ -669,8 +655,8 @@ async function loadVRM() {
 				if (bone) bone.rotation.set(x, y, z);
 			};
 
-			setBoneRot("leftUpperArm", -0.1, 0, 1.3);
-			setBoneRot("rightUpperArm", -0.1, 0, -1.3);
+			setBoneRot("leftUpperArm", -0, 0, 1.3);
+			setBoneRot("rightUpperArm", -0, 0, -1.3);
 			setBoneRot("leftLowerArm", -0.3, 0, 0);
 			setBoneRot("rightLowerArm", -0.3, 0, 0);
 			setBoneRot("leftHand", 0, -0.1, -0.1);
