@@ -22,4 +22,3 @@ onnx-export-venv/
 *.py
 *.err
 *.png
-*.vrm
