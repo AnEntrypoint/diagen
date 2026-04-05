@@ -145,10 +145,10 @@ class IdleAnimator {
 		this.lookState.bigLookTimer += deltaTime;
 
 		if (this.lookState.bigLookTimer >= this.lookState.nextBigLook) {
-			this.lookState.target.x = (Math.random() - 0.5) * 1.2;
-			this.lookState.target.y = (Math.random() - 0.5) * 0.8;
+			this.lookState.target.x = (Math.random() - 0.5) * 1.4;
+			this.lookState.target.y = (Math.random() - 0.5) * 1.0;
 			this.lookState.bigLookTimer = 0;
-			this.lookState.nextBigLook = Math.random() * 4 + 3;
+			this.lookState.nextBigLook = Math.random() * 2 + 1.5;
 		} else if (this.lookState.saccadeTimer >= this.lookState.nextSaccade) {
 			const saccadeStrength = Math.random() > 0.7 ? 0.4 : 0.15;
 			this.lookState.target.x = clamp(
@@ -165,7 +165,7 @@ class IdleAnimator {
 			this.lookState.nextSaccade = Math.random() * 0.8 + 0.2;
 		}
 
-		const lookSpeed = 3.0;
+		const lookSpeed = 4.0;
 		this.lookState.current.x +=
 			(this.lookState.target.x - this.lookState.current.x) *
 			lookSpeed *
@@ -178,26 +178,51 @@ class IdleAnimator {
 		const lookX = this.lookState.current.x;
 		const lookY = this.lookState.current.y;
 
-		if (lookX > 0.1) {
-			expressions.set("lookRight", clamp(lookX));
+		const eyeLookThreshold = 0.05;
+		if (lookX > eyeLookThreshold) {
+			expressions.set("lookRight", clamp((lookX - eyeLookThreshold) * 1.5));
 			expressions.set("lookLeft", 0);
-		} else if (lookX < -0.1) {
-			expressions.set("lookLeft", clamp(-lookX));
+			expressions.set("eyeLookOutRight", clamp((lookX - eyeLookThreshold) * 0.8));
+			expressions.set("eyeLookInLeft", clamp((lookX - eyeLookThreshold) * 0.8));
+			expressions.set("eyeLookOutLeft", 0);
+			expressions.set("eyeLookInRight", 0);
+		} else if (lookX < -eyeLookThreshold) {
+			expressions.set("lookLeft", clamp((-lookX - eyeLookThreshold) * 1.5));
 			expressions.set("lookRight", 0);
+			expressions.set("eyeLookOutLeft", clamp((-lookX - eyeLookThreshold) * 0.8));
+			expressions.set("eyeLookInRight", clamp((-lookX - eyeLookThreshold) * 0.8));
+			expressions.set("eyeLookOutRight", 0);
+			expressions.set("eyeLookInLeft", 0);
 		} else {
 			expressions.set("lookLeft", 0);
 			expressions.set("lookRight", 0);
+			expressions.set("eyeLookOutLeft", 0);
+			expressions.set("eyeLookOutRight", 0);
+			expressions.set("eyeLookInLeft", 0);
+			expressions.set("eyeLookInRight", 0);
 		}
 
-		if (lookY > 0.1) {
-			expressions.set("lookUp", clamp(lookY));
+		if (lookY > eyeLookThreshold) {
+			expressions.set("lookUp", clamp((lookY - eyeLookThreshold) * 1.5));
 			expressions.set("lookDown", 0);
-		} else if (lookY < -0.1) {
-			expressions.set("lookDown", clamp(-lookY));
+			expressions.set("eyeLookUpLeft", clamp((lookY - eyeLookThreshold) * 0.9));
+			expressions.set("eyeLookUpRight", clamp((lookY - eyeLookThreshold) * 0.9));
+			expressions.set("eyeLookDownLeft", 0);
+			expressions.set("eyeLookDownRight", 0);
+		} else if (lookY < -eyeLookThreshold) {
+			expressions.set("lookDown", clamp((-lookY - eyeLookThreshold) * 1.5));
 			expressions.set("lookUp", 0);
+			expressions.set("eyeLookDownLeft", clamp((-lookY - eyeLookThreshold) * 0.9));
+			expressions.set("eyeLookDownRight", clamp((-lookY - eyeLookThreshold) * 0.9));
+			expressions.set("eyeLookUpLeft", 0);
+			expressions.set("eyeLookUpRight", 0);
 		} else {
 			expressions.set("lookUp", 0);
 			expressions.set("lookDown", 0);
+			expressions.set("eyeLookUpLeft", 0);
+			expressions.set("eyeLookUpRight", 0);
+			expressions.set("eyeLookDownLeft", 0);
+			expressions.set("eyeLookDownRight", 0);
 		}
 
 		this._updateBonePoses(deltaTime);
