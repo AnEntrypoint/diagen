@@ -204,8 +204,11 @@ class FacialAnimationPlayer {
     if (this.isPlaying && this.animation) {
       const elapsed = (performance.now() - this.startTime) / 1000
       const frame = this.animation.getFrameAtTime(elapsed)
+
+      const idleExpressions = this.idleAnimator.update(deltaTime)
+
       if (frame) {
-        this.applyFrame(frame.blendshapes)
+        this.applyFrame(frame.blendshapes, idleExpressions)
       }
       if (elapsed >= this.animation.frames.length / this.animation.fps) {
         this.isPlaying = false
@@ -240,9 +243,9 @@ class FacialAnimationPlayer {
     }
   }
 
-  applyFrame(blendshapes) {
-    if (this.vrmVersion === '0.0') return this._applyVrm0(blendshapes)
-    if (this.vrmVersion === '1.0') return this._applyVrm1(blendshapes)
+  applyFrame(blendshapes, idleExpressions) {
+    if (this.vrmVersion === '0.0') return this._applyVrm0(blendshapes, idleExpressions)
+    if (this.vrmVersion === '1.0') return this._applyVrm1(blendshapes, idleExpressions)
     this._applyArkit(blendshapes)
   }
 
@@ -250,7 +253,7 @@ class FacialAnimationPlayer {
     return Object.entries(visemes).reduce((a, b) => b[1] > a[1] ? b : a, ['', 0])
   }
 
-  _applyVrm0(blendshapes) {
+  _applyVrm0(blendshapes, idleExpressions) {
     const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
     const has = (n) => this.availableExpressions.has(n)
     const set = (n, v) => { if (has(n)) this.blendProxy.setValue(n, clamp(v)) }
@@ -261,13 +264,13 @@ class FacialAnimationPlayer {
     const [dom, domVal] = this._dominantViseme(vrm0Visemes)
     for (const k of ['A','I','U','E','O']) set(k, k === dom ? domVal : 0)
 
-    const eyes = mapEyes(blendshapes)
-    set('Blink_L', eyes.blinkLeft * 0.8)
-    set('Blink_R', eyes.blinkRight * 0.8)
-    set('Blink', eyes.blink * 0.8)
+    for (const [name, val] of idleExpressions) {
+      const vrm0Name = name === 'blink' ? 'Blink' : name === 'blinkLeft' ? 'Blink_L' : name === 'blinkRight' ? 'Blink_R' : name === 'neutral' ? 'Neutral' : name === 'lookUp' ? 'LookUp' : name === 'lookDown' ? 'LookDown' : name === 'lookLeft' ? 'LookLeft' : name === 'lookRight' ? 'LookRight' : name
+      if (has(vrm0Name)) set(vrm0Name, val)
+    }
   }
 
-  _applyVrm1(blendshapes) {
+  _applyVrm1(blendshapes, idleExpressions) {
     const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
     const values = new Map()
     const has = (n) => this.availableExpressions.has(n)
@@ -277,10 +280,9 @@ class FacialAnimationPlayer {
     const [dom, domVal] = this._dominantViseme(v)
     for (const k of ['aa','ih','ou','ee','oh']) set(k, k === dom ? domVal : 0)
 
-    const eyes = mapEyes(blendshapes)
-    set('blinkLeft', eyes.blinkLeft * 0.8)
-    set('blinkRight', eyes.blinkRight * 0.8)
-    set('blink', eyes.blink * 0.8)
+    for (const [name, val] of idleExpressions) {
+      if (has(name)) values.set(name, val)
+    }
 
     for (const name of this.lastApplied.keys()) {
       if (!values.has(name)) this.expressionManager.setValue(name, 0)
@@ -309,10 +311,12 @@ const textInput = document.getElementById('text-input')
 const generateBtn = document.getElementById('generate-btn')
 const stopBtn = document.getElementById('stop-btn')
 const downloadBtn = document.getElementById('download-btn')
+const replayBtn = document.getElementById('replay-btn')
 const statusEl = document.getElementById('status')
 const timingEl = document.getElementById('timing')
 
 let lastGeneratedAudio = null
+let lastGeneratedAnimation = null
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x1a1a25)
@@ -413,9 +417,10 @@ generateBtn.addEventListener('click', async () => {
   
   generateBtn.disabled = true
   stopBtn.disabled = false
+  replayBtn.disabled = true
   setStatus('Generating...', 'loading')
   timingEl.textContent = ''
-  
+
   const startTime = performance.now()
   
   try {
@@ -438,7 +443,9 @@ generateBtn.addEventListener('click', async () => {
     facialPlayer.play()
 
     lastGeneratedAudio = data.audio
+    lastGeneratedAnimation = data.animation
     downloadBtn.disabled = false
+    replayBtn.disabled = false
 
     setStatus(`Playing (${data.duration.toFixed(1)}s)`, 'ready')
     timingEl.textContent = `Generated in ${genTime}s (${rtfx}x realtime)`
@@ -466,6 +473,13 @@ downloadBtn.addEventListener('click', () => {
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+})
+
+replayBtn.addEventListener('click', async () => {
+  if (!facialPlayer || !lastGeneratedAudio || !lastGeneratedAnimation) return
+  await facialPlayer.load(lastGeneratedAnimation, lastGeneratedAudio)
+  facialPlayer.play()
+  stopBtn.disabled = false
 })
 
 generateBtn.addEventListener('keydown', (e) => {
