@@ -27,7 +27,7 @@ app.use((req, res, next) => {
   next()
 })
 
-const CLEETUS_WAV = path.join(__dirname, 'cleetus.wav')
+const CLEETUS_WAV = path.join(__dirname, 'voices', 'cleetus.wav')
 const TTS_MODELS_DIR = path.join(__dirname, 'models', 'tts')
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')))
