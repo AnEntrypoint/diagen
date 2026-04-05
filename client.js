@@ -50,7 +50,7 @@ class IdleAnimator {
 
 		this.microMovements.browPhase += deltaTime * 0.3;
 		const browSubtle = clamp(
-			(Math.sin(this.microMovements.browPhase) + 1) * 0.5 * 0.08,
+			(Math.sin(this.microMovements.browPhase) + 1) * 0.5 * 0.25,
 		);
 		if (Math.random() > 0.995)
 			this.microMovements.browPhase += Math.random() * 0.5;
@@ -64,22 +64,22 @@ class IdleAnimator {
 		}
 
 		const cheekSubtle = clamp(
-			(Math.sin(this.microMovements.mouthPhase * 0.7 + 1) + 1) * 0.5 * 0.06,
+			(Math.sin(this.microMovements.mouthPhase * 0.7 + 1) + 1) * 0.5 * 0.25,
 		);
 
 		const noseSubtle = clamp(
-			(Math.sin(this.microMovements.mouthPhase * 0.5 + 2) + 1) * 0.5 * 0.04,
+			(Math.sin(this.microMovements.mouthPhase * 0.5 + 2) + 1) * 0.5 * 0.2,
 		);
 
 		if (Math.random() > 0.998) {
-			expressions.set("browInnerUp", clamp(browSubtle * 1.5 + 0.1));
+			expressions.set("browInnerUp", clamp(browSubtle * 2 + 0.15));
 		} else if (Math.random() > 0.995) {
 			expressions.set("browInnerUp", 0);
 		}
 
-		if (browSubtle > 0.06) {
-			expressions.set("browOuterUpLeft", clamp(browSubtle * 0.6));
-			expressions.set("browOuterUpRight", clamp(browSubtle * 0.6));
+		if (browSubtle > 0.08) {
+			expressions.set("browOuterUpLeft", clamp(browSubtle * 1.2));
+			expressions.set("browOuterUpRight", clamp(browSubtle * 1.2));
 		}
 
 		if (cheekSubtle > 0.05) {
@@ -94,8 +94,8 @@ class IdleAnimator {
 
 		const eyeWideChance = Math.sin(this.time * 0.5) * 0.5 + 0.5;
 		if (eyeWideChance > 0.92 && Math.random() > 0.99) {
-			expressions.set("eyeWideLeft", clamp(Math.random() * 0.3));
-			expressions.set("eyeWideRight", clamp(Math.random() * 0.3));
+			expressions.set("eyeWideLeft", clamp(Math.random() * 0.6));
+			expressions.set("eyeWideRight", clamp(Math.random() * 0.6));
 			setTimeout(() => {
 				expressions.set("eyeWideLeft", 0);
 				expressions.set("eyeWideRight", 0);
