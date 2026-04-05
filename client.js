@@ -36,6 +36,21 @@ class IdleAnimator {
 			speed: 0.5 + Math.random() * 0.3,
 			magnitude: 0.03 + Math.random() * 0.02,
 		};
+
+		this.facialTargets = {
+			browInnerUp: 0,
+			browOuterUpLeft: 0,
+			browOuterUpRight: 0,
+			cheekSquintLeft: 0,
+			cheekSquintRight: 0,
+			noseSneerLeft: 0,
+			noseSneerRight: 0,
+			eyeWideLeft: 0,
+			eyeWideRight: 0,
+		};
+		this.facialCurrent = { ...this.facialTargets };
+		this.browTimer = 0;
+		this.nextBrowChange = Math.random() * 2 + 1;
 	}
 
 	update(deltaTime) {
@@ -48,59 +63,61 @@ class IdleAnimator {
 		const breathValue = clamp((Math.sin(this.breathingPhase) + 1) * 0.5 * 0.15);
 		expressions.set("neutral", 1 - breathValue);
 
-		this.microMovements.browPhase += deltaTime * 0.3;
-		const browSubtle = clamp(
-			(Math.sin(this.microMovements.browPhase) + 1) * 0.5 * 0.25,
-		);
-		if (Math.random() > 0.995)
-			this.microMovements.browPhase += Math.random() * 0.5;
-
 		this.microMovements.mouthPhase += deltaTime * 0.2;
-		const mouthSubtle = clamp(
-			(Math.sin(this.microMovements.mouthPhase) + 1) * 0.5 * 0.05,
-		);
-		if (Math.random() > 0.99) {
-			this.microMovements.mouthPhase += Math.random() * 0.3;
+
+		const cheekBase = (Math.sin(this.microMovements.mouthPhase * 0.7 + 1) + 1) * 0.5;
+		const noseBase = (Math.sin(this.microMovements.mouthPhase * 0.5 + 2) + 1) * 0.5;
+
+		this.facialTargets.cheekSquintLeft = cheekBase * 0.4;
+		this.facialTargets.cheekSquintRight = cheekBase * 0.4;
+		this.facialTargets.noseSneerLeft = noseBase * 0.35;
+		this.facialTargets.noseSneerRight = noseBase * 0.35;
+
+		this.browTimer += deltaTime;
+		if (this.browTimer >= this.nextBrowChange) {
+			this.browTimer = 0;
+			this.nextBrowChange = Math.random() * 3 + 2;
+			if (Math.random() > 0.4) {
+				this.facialTargets.browInnerUp = Math.random() * 0.5 + 0.2;
+				this.facialTargets.browOuterUpLeft = Math.random() * 0.3 + 0.1;
+				this.facialTargets.browOuterUpRight = Math.random() * 0.3 + 0.1;
+			} else {
+				this.facialTargets.browInnerUp = 0;
+				this.facialTargets.browOuterUpLeft = 0;
+				this.facialTargets.browOuterUpRight = 0;
+			}
 		}
 
-		const cheekSubtle = clamp(
-			(Math.sin(this.microMovements.mouthPhase * 0.7 + 1) + 1) * 0.5 * 0.25,
-		);
+		const smoothSpeed = 2.5 * deltaTime;
+		this.facialCurrent.browInnerUp += (this.facialTargets.browInnerUp - this.facialCurrent.browInnerUp) * smoothSpeed;
+		this.facialCurrent.browOuterUpLeft += (this.facialTargets.browOuterUpLeft - this.facialCurrent.browOuterUpLeft) * smoothSpeed;
+		this.facialCurrent.browOuterUpRight += (this.facialTargets.browOuterUpRight - this.facialCurrent.browOuterUpRight) * smoothSpeed;
+		this.facialCurrent.cheekSquintLeft += (this.facialTargets.cheekSquintLeft - this.facialCurrent.cheekSquintLeft) * smoothSpeed;
+		this.facialCurrent.cheekSquintRight += (this.facialTargets.cheekSquintRight - this.facialCurrent.cheekSquintRight) * smoothSpeed;
+		this.facialCurrent.noseSneerLeft += (this.facialTargets.noseSneerLeft - this.facialCurrent.noseSneerLeft) * smoothSpeed;
+		this.facialCurrent.noseSneerRight += (this.facialTargets.noseSneerRight - this.facialCurrent.noseSneerRight) * smoothSpeed;
+		this.facialCurrent.eyeWideLeft += (this.facialTargets.eyeWideLeft - this.facialCurrent.eyeWideLeft) * smoothSpeed;
+		this.facialCurrent.eyeWideRight += (this.facialTargets.eyeWideRight - this.facialCurrent.eyeWideRight) * smoothSpeed;
 
-		const noseSubtle = clamp(
-			(Math.sin(this.microMovements.mouthPhase * 0.5 + 2) + 1) * 0.5 * 0.2,
-		);
-
-		if (Math.random() > 0.998) {
-			expressions.set("browInnerUp", clamp(browSubtle * 2 + 0.15));
-		} else if (Math.random() > 0.995) {
-			expressions.set("browInnerUp", 0);
-		}
-
-		if (browSubtle > 0.08) {
-			expressions.set("browOuterUpLeft", clamp(browSubtle * 1.2));
-			expressions.set("browOuterUpRight", clamp(browSubtle * 1.2));
-		}
-
-		if (cheekSubtle > 0.05) {
-			expressions.set("cheekSquintLeft", clamp(cheekSubtle));
-			expressions.set("cheekSquintRight", clamp(cheekSubtle));
-		}
-
-		if (noseSubtle > 0.03) {
-			expressions.set("noseSneerLeft", clamp(noseSubtle));
-			expressions.set("noseSneerRight", clamp(noseSubtle));
-		}
+		expressions.set("browInnerUp", clamp(this.facialCurrent.browInnerUp));
+		expressions.set("browOuterUpLeft", clamp(this.facialCurrent.browOuterUpLeft));
+		expressions.set("browOuterUpRight", clamp(this.facialCurrent.browOuterUpRight));
+		expressions.set("cheekSquintLeft", clamp(this.facialCurrent.cheekSquintLeft));
+		expressions.set("cheekSquintRight", clamp(this.facialCurrent.cheekSquintRight));
+		expressions.set("noseSneerLeft", clamp(this.facialCurrent.noseSneerLeft));
+		expressions.set("noseSneerRight", clamp(this.facialCurrent.noseSneerRight));
 
 		const eyeWideChance = Math.sin(this.time * 0.5) * 0.5 + 0.5;
-		if (eyeWideChance > 0.92 && Math.random() > 0.99) {
-			expressions.set("eyeWideLeft", clamp(Math.random() * 0.6));
-			expressions.set("eyeWideRight", clamp(Math.random() * 0.6));
+		if (eyeWideChance > 0.92 && Math.random() > 0.99 && this.facialTargets.eyeWideLeft === 0) {
+			this.facialTargets.eyeWideLeft = Math.random() * 0.8 + 0.2;
+			this.facialTargets.eyeWideRight = Math.random() * 0.8 + 0.2;
 			setTimeout(() => {
-				expressions.set("eyeWideLeft", 0);
-				expressions.set("eyeWideRight", 0);
-			}, 150);
+				this.facialTargets.eyeWideLeft = 0;
+				this.facialTargets.eyeWideRight = 0;
+			}, 250);
 		}
+		expressions.set("eyeWideLeft", clamp(this.facialCurrent.eyeWideLeft));
+		expressions.set("eyeWideRight", clamp(this.facialCurrent.eyeWideRight));
 
 		this.blinkState.blinkTimer += deltaTime;
 		if (
