@@ -131,7 +131,6 @@ class IdleAnimator {
     if (!this.vrm.humanoid || this.basePoses.size === 0) return
 
     const humanoid = this.vrm.humanoid
-    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
     this.posePhase += deltaTime * 0.8
 
@@ -154,9 +153,9 @@ class IdleAnimator {
 
     const lArmBase = getBase('leftUpperArm')
     const rArmBase = getBase('rightUpperArm')
-    const armSway = Math.sin(this.posePhase * 0.4) * 0.015
-    setRot('leftUpperArm', lArmBase.x, lArmBase.y, lArmBase.z + armSway)
-    setRot('rightUpperArm', rArmBase.x, rArmBase.y, rArmBase.z - armSway)
+    const armSway = Math.sin(this.posePhase * 0.4) * 0.02
+    setRot('leftUpperArm', lArmBase.x + armSway * 0.5, lArmBase.y, lArmBase.z + armSway * 0.3)
+    setRot('rightUpperArm', rArmBase.x + armSway * 0.5, rArmBase.y, rArmBase.z - armSway * 0.3)
   }
 }
 
@@ -447,12 +446,12 @@ async function loadVRM() {
         if (bone) bone.rotation.set(x, y, z)
       }
 
-      setBoneRot('leftUpperArm', 0, 0, -0.15)
-      setBoneRot('rightUpperArm', 0, 0, 0.15)
-      setBoneRot('leftLowerArm', 0, 0, -0.1)
-      setBoneRot('rightLowerArm', 0, 0, 0.1)
-      setBoneRot('leftHand', 0, 0, 0)
-      setBoneRot('rightHand', 0, 0, 0)
+      setBoneRot('leftUpperArm', -0.15, 0, -0.35)
+      setBoneRot('rightUpperArm', -0.15, 0, 0.35)
+      setBoneRot('leftLowerArm', -0.4, -0.1, -0.05)
+      setBoneRot('rightLowerArm', -0.4, 0.1, 0.05)
+      setBoneRot('leftHand', 0, -0.1, -0.1)
+      setBoneRot('rightHand', 0, 0.1, 0.1)
       setBoneRot('spine', 0.02, 0, 0)
       setBoneRot('chest', 0.02, 0, 0)
       setBoneRot('neck', 0.05, 0, 0)
