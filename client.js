@@ -446,10 +446,10 @@ async function loadVRM() {
         if (bone) bone.rotation.set(x, y, z)
       }
 
-      setBoneRot('leftUpperArm', 0.4, 0, -0.2)
-      setBoneRot('rightUpperArm', 0.4, 0, 0.2)
-      setBoneRot('leftLowerArm', 0.3, 0, 0)
-      setBoneRot('rightLowerArm', 0.3, 0, 0)
+      setBoneRot('leftUpperArm', -0.4, 0, 0.2)
+      setBoneRot('rightUpperArm', -0.4, 0, -0.2)
+      setBoneRot('leftLowerArm', -0.3, 0, 0)
+      setBoneRot('rightLowerArm', -0.3, 0, 0)
       setBoneRot('leftHand', 0, -0.1, -0.1)
       setBoneRot('rightHand', 0, 0.1, 0.1)
       setBoneRot('spine', 0.02, 0, 0)
