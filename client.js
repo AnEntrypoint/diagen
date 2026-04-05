@@ -24,6 +24,14 @@ class IdleAnimator {
       bigLookTimer: 0,
       nextBigLook: Math.random() * 4 + 3
     }
+
+    this.basePoses = new Map()
+    this.posePhase = Math.random() * Math.PI * 2
+    this.sw = {
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 0.3,
+      magnitude: 0.03 + Math.random() * 0.02
+    }
   }
 
   update(deltaTime) {
@@ -104,7 +112,51 @@ class IdleAnimator {
       expressions.set('lookDown', 0)
     }
 
+    this._updateBonePoses(deltaTime)
+
     return expressions
+  }
+
+  saveBasePose(humanoid) {
+    const bones = ['leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm', 'spine', 'chest', 'neck']
+    for (const name of bones) {
+      const bone = humanoid.getNormalizedBoneNode(name)
+      if (bone) {
+        this.basePoses.set(name, { x: bone.rotation.x, y: bone.rotation.y, z: bone.rotation.z })
+      }
+    }
+  }
+
+  _updateBonePoses(deltaTime) {
+    if (!this.vrm.humanoid || this.basePoses.size === 0) return
+
+    const humanoid = this.vrm.humanoid
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+    this.posePhase += deltaTime * 0.8
+
+    const getBase = (name) => this.basePoses.get(name) || { x: 0, y: 0, z: 0 }
+    const setRot = (name, x, y, z) => {
+      const bone = humanoid.getNormalizedBoneNode(name)
+      if (bone) bone.rotation.set(x, y, z)
+    }
+
+    const base = getBase('spine')
+    const sway = Math.sin(this.posePhase) * this.sw.magnitude
+    setRot('spine', base.x + sway * 0.5, base.y + Math.cos(this.posePhase * 0.7) * 0.01, base.z)
+
+    const chestBase = getBase('chest')
+    setRot('chest', chestBase.x + sway * 0.3, chestBase.y, chestBase.z)
+
+    const neckBase = getBase('neck')
+    const headSway = Math.sin(this.posePhase * 0.6 + 1) * 0.02
+    setRot('neck', neckBase.x + headSway, neckBase.y + Math.cos(this.posePhase * 0.5) * 0.015, neckBase.z)
+
+    const lArmBase = getBase('leftUpperArm')
+    const rArmBase = getBase('rightUpperArm')
+    const armSway = Math.sin(this.posePhase * 0.4) * 0.015
+    setRot('leftUpperArm', lArmBase.x, lArmBase.y, lArmBase.z + armSway)
+    setRot('rightUpperArm', rArmBase.x, rArmBase.y, rArmBase.z - armSway)
   }
 }
 
@@ -380,17 +432,42 @@ async function loadVRM() {
     vrm.scene.rotation.y = Math.PI
     vrm.scene.scale.setScalar(1.323)
     vrm.scene.position.y = -0.28
-    
+
     vrm.scene.traverse((obj) => {
       if (obj.isMesh) {
         obj.castShadow = true
         obj.receiveShadow = true
       }
     })
-    
+
+    if (vrm.humanoid) {
+      const humanoid = vrm.humanoid
+      const setBoneRot = (name, x, y, z) => {
+        const bone = humanoid.getNormalizedBoneNode(name)
+        if (bone) bone.rotation.set(x, y, z)
+      }
+
+      setBoneRot('leftUpperArm', 0, 0, -0.15)
+      setBoneRot('rightUpperArm', 0, 0, 0.15)
+      setBoneRot('leftLowerArm', 0, 0, -0.1)
+      setBoneRot('rightLowerArm', 0, 0, 0.1)
+      setBoneRot('leftHand', 0, 0, 0)
+      setBoneRot('rightHand', 0, 0, 0)
+      setBoneRot('spine', 0.02, 0, 0)
+      setBoneRot('chest', 0.02, 0, 0)
+      setBoneRot('neck', 0.05, 0, 0)
+      setBoneRot('leftUpperLeg', 0.1, 0, -0.05)
+      setBoneRot('rightUpperLeg', 0.1, 0, 0.05)
+      setBoneRot('leftLowerLeg', -0.15, 0, 0)
+      setBoneRot('rightLowerLeg', -0.15, 0, 0)
+    }
+
     scene.add(vrm.scene)
-    
+
     facialPlayer = new FacialAnimationPlayer(vrm)
+    if (vrm.humanoid) {
+      facialPlayer.idleAnimator.saveBasePose(vrm.humanoid)
+    }
     
     loadingEl.style.display = 'none'
     setStatus('Ready', 'ready')
