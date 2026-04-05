@@ -2,7 +2,63 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { AnimationReader, mapVisemes, mapEyes, mapEmotions } from './animation-core.mjs'
+import { AnimationReader, mapVisemes, mapEyes } from './animation-core.mjs'
+
+class IdleAnimator {
+  constructor(vrm) {
+    this.vrm = vrm
+    this.time = 0
+    this.blinkState = { isBlinking: false, blinkTimer: 0, nextBlink: Math.random() * 2 + 2 }
+    this.breathingPhase = Math.random() * Math.PI * 2
+    this.microMovements = {
+      browPhase: Math.random() * Math.PI * 2,
+      mouthPhase: Math.random() * Math.PI * 2,
+      lookPhase: Math.random() * Math.PI * 2
+    }
+  }
+
+  update(deltaTime) {
+    this.time += deltaTime
+
+    const expressions = new Map()
+    const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
+
+    this.breathingPhase += deltaTime * 1.5
+    const breathValue = clamp((Math.sin(this.breathingPhase) + 1) * 0.5 * 0.15)
+    expressions.set('neutral', 1 - breathValue)
+
+    this.microMovements.browPhase += deltaTime * 0.3
+    const browSubtle = clamp((Math.sin(this.microMovements.browPhase) + 1) * 0.5 * 0.08)
+    if (Math.random() > 0.995) this.microMovements.browPhase += Math.random() * 0.5
+
+    this.blinkState.blinkTimer += deltaTime
+    if (!this.blinkState.isBlinking && this.blinkState.blinkTimer >= this.blinkState.nextBlink) {
+      this.blinkState.isBlinking = true
+      this.blinkState.blinkTimer = 0
+    }
+    if (this.blinkState.isBlinking) {
+      const blinkProgress = this.blinkState.blinkTimer / 0.15
+      if (blinkProgress >= 1) {
+        this.blinkState.isBlinking = false
+        this.blinkState.blinkTimer = 0
+        this.blinkState.nextBlink = Math.random() * 3 + 2
+      } else {
+        const blinkValue = Math.sin(blinkProgress * Math.PI)
+        expressions.set('blink', clamp(blinkValue))
+        expressions.set('blinkLeft', clamp(blinkValue))
+        expressions.set('blinkRight', clamp(blinkValue))
+      }
+    }
+
+    const hasExpression = (name) => {
+      if (this.vrm.expressionManager) return this.vrm.expressionManager.expressions.some(e => e.expressionName === name)
+      if (this.vrm.blendShapeProxy) return this.vrm.blendShapeProxy.getExpressionNames().includes(name)
+      return false
+    }
+
+    return expressions
+  }
+}
 
 class FacialAnimationPlayer {
   constructor(vrm) {
@@ -14,11 +70,13 @@ class FacialAnimationPlayer {
     this.availableExpressions = new Set()
     this.lastApplied = new Map()
     this.morphTargetMeshes = []
+    this.idleAnimator = new IdleAnimator(vrm)
+    this.currentExpressions = new Map()
 
     if (vrm.blendShapeProxy) {
       this.vrmVersion = '0.0'
       this.blendProxy = vrm.blendShapeProxy
-      const presets = ['A','I','U','E','O','Blink','Blink_L','Blink_R','Joy','Angry','Sorrow','Fun','Neutral','LookUp','LookDown','LookLeft','LookRight']
+      const presets = ['A','I','U','E','O','Blink','Blink_L','Blink_R','Neutral','LookUp','LookDown','LookLeft','LookRight']
       presets.forEach(p => this.availableExpressions.add(p))
     } else if (vrm.expressionManager) {
       this.vrmVersion = '1.0'
@@ -81,6 +139,7 @@ class FacialAnimationPlayer {
   }
 
   resetExpressions() {
+    this.currentExpressions.clear()
     if (this.vrmVersion === '0.0') {
       for (const name of this.availableExpressions) this.blendProxy.setValue(name, 0)
     } else if (this.vrmVersion === '1.0') {
@@ -93,17 +152,43 @@ class FacialAnimationPlayer {
     this.lastApplied.clear()
   }
 
-  update() {
-    if (!this.isPlaying || !this.animation) return
-    
-    const elapsed = (performance.now() - this.startTime) / 1000
-    const frame = this.animation.getFrameAtTime(elapsed)
-    if (!frame) return
-    
-    this.applyFrame(frame.blendshapes)
-    
-    if (elapsed >= this.animation.frames.length / this.animation.fps) {
-      this.isPlaying = false
+  update(deltaTime = 1/60) {
+    if (this.isPlaying && this.animation) {
+      const elapsed = (performance.now() - this.startTime) / 1000
+      const frame = this.animation.getFrameAtTime(elapsed)
+      if (frame) {
+        this.applyFrame(frame.blendshapes)
+      }
+      if (elapsed >= this.animation.frames.length / this.animation.fps) {
+        this.isPlaying = false
+        this.resetExpressions()
+      }
+    } else {
+      const idleExpressions = this.idleAnimator.update(deltaTime)
+      this._applyIdleExpressions(idleExpressions)
+    }
+  }
+
+  _applyIdleExpressions(idleExpressions) {
+    const values = new Map()
+    const has = (n) => this.availableExpressions.has(n)
+
+    if (this.vrmVersion === '1.0') {
+      for (const [name, val] of idleExpressions) {
+        if (has(name)) values.set(name, val)
+      }
+      for (const [name, val] of values) {
+        this.expressionManager.setValue(name, val)
+      }
+      for (const name of this.lastApplied.keys()) {
+        if (!values.has(name)) this.expressionManager.setValue(name, 0)
+      }
+      this.lastApplied = new Map(values)
+    } else if (this.vrmVersion === '0.0') {
+      for (const [name, val] of idleExpressions) {
+        const vrm0Name = name === 'blink' ? 'Blink' : name === 'blinkLeft' ? 'Blink_L' : name === 'blinkRight' ? 'Blink_R' : name === 'neutral' ? 'Neutral' : name
+        if (has(vrm0Name)) this.blendProxy.setValue(vrm0Name, val)
+      }
     }
   }
 
@@ -129,19 +214,9 @@ class FacialAnimationPlayer {
     for (const k of ['A','I','U','E','O']) set(k, k === dom ? domVal : 0)
 
     const eyes = mapEyes(blendshapes)
-    set('Blink_L', eyes.blinkLeft)
-    set('Blink_R', eyes.blinkRight)
-    set('Blink', eyes.blink)
-    set('LookUp', eyes.lookUp)
-    set('LookDown', eyes.lookDown)
-    set('LookLeft', eyes.lookLeft)
-    set('LookRight', eyes.lookRight)
-
-    const em = mapEmotions(blendshapes)
-    set('Joy', em.happy)
-    set('Sorrow', em.sad)
-    set('Angry', em.angry)
-    set('Fun', em.fun)
+    set('Blink_L', eyes.blinkLeft * 0.8)
+    set('Blink_R', eyes.blinkRight * 0.8)
+    set('Blink', eyes.blink * 0.8)
   }
 
   _applyVrm1(blendshapes) {
@@ -155,20 +230,9 @@ class FacialAnimationPlayer {
     for (const k of ['aa','ih','ou','ee','oh']) set(k, k === dom ? domVal : 0)
 
     const eyes = mapEyes(blendshapes)
-    set('blinkLeft', eyes.blinkLeft)
-    set('blinkRight', eyes.blinkRight)
-    set('blink', eyes.blink)
-    set('lookUp', eyes.lookUp)
-    set('lookDown', eyes.lookDown)
-    set('lookLeft', eyes.lookLeft)
-    set('lookRight', eyes.lookRight)
-
-    const em = mapEmotions(blendshapes)
-    set('happy', em.happy)
-    set('sad', em.sad)
-    set('angry', em.angry)
-    set('relaxed', em.relaxed)
-    set('surprised', em.surprised)
+    set('blinkLeft', eyes.blinkLeft * 0.8)
+    set('blinkRight', eyes.blinkRight * 0.8)
+    set('blink', eyes.blink * 0.8)
 
     for (const name of this.lastApplied.keys()) {
       if (!values.has(name)) this.expressionManager.setValue(name, 0)
@@ -196,8 +260,11 @@ const loadingEl = document.getElementById('loading')
 const textInput = document.getElementById('text-input')
 const generateBtn = document.getElementById('generate-btn')
 const stopBtn = document.getElementById('stop-btn')
+const downloadBtn = document.getElementById('download-btn')
 const statusEl = document.getElementById('status')
 const timingEl = document.getElementById('timing')
+
+let lastGeneratedAudio = null
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x1a1a25)
@@ -321,7 +388,10 @@ generateBtn.addEventListener('click', async () => {
     
     await facialPlayer.load(data.animation, data.audio)
     facialPlayer.play()
-    
+
+    lastGeneratedAudio = data.audio
+    downloadBtn.disabled = false
+
     setStatus(`Playing (${data.duration.toFixed(1)}s)`, 'ready')
     timingEl.textContent = `Generated in ${genTime}s (${rtfx}x realtime)`
   } catch (err) {
@@ -340,6 +410,16 @@ stopBtn.addEventListener('click', () => {
   stopBtn.disabled = true
 })
 
+downloadBtn.addEventListener('click', () => {
+  if (!lastGeneratedAudio) return
+  const link = document.createElement('a')
+  link.href = `data:audio/wav;base64,${lastGeneratedAudio}`
+  link.download = `cleetus_${Date.now()}.wav`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+})
+
 generateBtn.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -354,17 +434,22 @@ textInput.addEventListener('keydown', (e) => {
   }
 })
 
+let lastTime = performance.now()
 function animate() {
   requestAnimationFrame(animate)
-  
+
+  const now = performance.now()
+  const deltaTime = (now - lastTime) / 1000
+  lastTime = now
+
   if (vrm) {
-    vrm.update(1/60)
+    vrm.update(deltaTime)
   }
-  
+
   if (facialPlayer) {
-    facialPlayer.update()
+    facialPlayer.update(deltaTime)
   }
-  
+
   controls.update()
   renderer.render(scene, camera)
 }
