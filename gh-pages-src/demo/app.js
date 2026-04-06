@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=51', { type: 'module' })
+const worker = new Worker('./worker.js?v=52', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
