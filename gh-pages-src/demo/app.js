@@ -1,4 +1,4 @@
-const worker = new Worker('./worker.js?v=47', { type: 'module' })
+const worker = new Worker('./worker.js?v=48', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -122,18 +122,12 @@ async function loadModel() {
 async function speak(text) {
   if (ttsLoading && !ttsReady) $('status').textContent = 'TTS loading… (first run takes ~1 min)'
   const ready = await waitForTTS()
-  if (ready) {
-    try {
-      ttsChunks = []
-      await new Promise((resolve, reject) => {
-        ttsChunkResolve = resolve; ttsChunkReject = reject
-        ttsWorker.postMessage({ type: 'generate', data: { text, voice: $('voice-select').value } })
-      })
-      return
-    } catch (err) { $('status').textContent = 'TTS error: ' + err.message; console.warn('[TTS] PocketTTS failed, falling back to browser TTS:', err.message) }
-  }
-  if (!synth) return
-  return new Promise((resolve) => { synth.cancel(); const utt = new SpeechSynthesisUtterance(text); utt.onend = resolve; utt.onerror = resolve; synth.speak(utt) })
+  if (!ready) { $('status').textContent = 'TTS unavailable'; return }
+  ttsChunks = []
+  await new Promise((resolve, reject) => {
+    ttsChunkResolve = resolve; ttsChunkReject = reject
+    ttsWorker.postMessage({ type: 'generate', data: { text, voice: $('voice-select').value } })
+  })
 }
 function startRecognition() {
   return new Promise((resolve, reject) => {
