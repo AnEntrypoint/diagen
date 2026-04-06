@@ -126,10 +126,12 @@ self.onmessage = async (e) => {
       const gpuAdapter = (typeof navigator !== 'undefined' && navigator.gpu) ? await navigator.gpu.requestAdapter().catch(() => null) : null
       if (gpuAdapter) {
         try {
+          env.backends.onnx.wasm.wasmPaths = './ort/'
           model = await tryLoadModel('webgpu', progress)
           activeDevice = 'webgpu'
         } catch (gpuErr) {
-          self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message.slice(0,60)}), falling back to WASM…` } })
+          self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message?.slice(0,60) ?? gpuErr}), falling back to WASM…` } })
+          env.backends.onnx.wasm.wasmPaths = undefined
           model = await tryLoadModel('wasm', progress)
           activeDevice = 'wasm'
         }
