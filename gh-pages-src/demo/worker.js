@@ -123,11 +123,17 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      try {
-        model = await tryLoadModel('webgpu', progress)
-        activeDevice = 'webgpu'
-      } catch (gpuErr) {
-        self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message.slice(0,60)}), falling back to WASM…` } })
+      const gpuAdapter = (typeof navigator !== 'undefined' && navigator.gpu) ? await navigator.gpu.requestAdapter().catch(() => null) : null
+      if (gpuAdapter) {
+        try {
+          model = await tryLoadModel('webgpu', progress)
+          activeDevice = 'webgpu'
+        } catch (gpuErr) {
+          self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message.slice(0,60)}), falling back to WASM…` } })
+          model = await tryLoadModel('wasm', progress)
+          activeDevice = 'wasm'
+        }
+      } else {
         model = await tryLoadModel('wasm', progress)
         activeDevice = 'wasm'
       }
