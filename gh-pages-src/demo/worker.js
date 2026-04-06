@@ -123,8 +123,14 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      model = await tryLoadModel('wasm', progress)
-      activeDevice = 'wasm'
+      try {
+        model = await tryLoadModel('webgpu', progress)
+        activeDevice = 'webgpu'
+      } catch (gpuErr) {
+        self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message.slice(0,60)}), falling back to WASM…` } })
+        model = await tryLoadModel('wasm', progress)
+        activeDevice = 'wasm'
+      }
       loading = false
       self.postMessage({ type: 'loaded', id, device: activeDevice })
     } catch (err) {
