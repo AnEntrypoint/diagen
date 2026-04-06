@@ -3,7 +3,7 @@ import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } fro
 const MODEL_BASE = './model'
 const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
 const CHUNKS = {
-  'decoder_model_merged_weights.bin': {
+  'decoder_model_merged_q4f16.onnx': {
     stem: 'decoder_model_merged_q4f16.onnx',
     sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
   },
@@ -63,13 +63,26 @@ env.localModelPath = './'
 env.fetch = self.fetch
 env.backends.onnx.wasm.numThreads = 1
 
-// Bust stale transformers-cache entries for JSON config files only (ONNX files are immutable)
+// Bust stale transformers-cache entries: JSON configs always, plus any ONNX that was cached
+// before chunked reassembly was in place (those would be the small 780KB stub file, not the
+// full 453MB self-contained ONNX we serve via the fetch interceptor).
+const DECODER_ONNX_MIN_SIZE = 400 * 1024 * 1024 // 400MB — reassembled ONNX is ~453MB
 const cacheBust = (async () => {
   try {
     const c = await caches.open('transformers-cache')
     const keys = await c.keys()
     for (const k of keys) {
-      if (k.url.includes('/model/') && k.url.endsWith('.json')) await c.delete(k)
+      if (k.url.includes('/model/') && k.url.endsWith('.json')) { await c.delete(k); continue }
+      if (k.url.includes('decoder_model_merged_q4f16.onnx')) {
+        const resp = await c.match(k)
+        if (resp) {
+          const buf = await resp.clone().arrayBuffer()
+          if (buf.byteLength < DECODER_ONNX_MIN_SIZE) {
+            await c.delete(k)
+            console.log('[worker] Cleared stale small ONNX from cache:', k.url, buf.byteLength)
+          }
+        }
+      }
     }
   } catch(e) {}
 })()
@@ -85,12 +98,9 @@ let kvcache = null
 async function tryLoadModel(device, progress) {
   return Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
     dtype: DTYPE, device, progress_callback: progress,
-    model_file_name: 'decoder_model_merged',
-    session_options: { externalData: [{ path: 'decoder_model_merged_weights.bin', data: 'onnx/decoder_model_merged_weights.bin' }] }
+    model_file_name: 'decoder_model_merged'
   })
 }
-
-function cacheKey(ids) { return ids.join(',') }
 
 function findCachePrefix(inputIds) {
   if (!kvcache) return null
@@ -113,14 +123,8 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      try {
-        model = await tryLoadModel('webgpu', progress)
-        activeDevice = 'webgpu'
-      } catch (gpuErr) {
-        self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message.slice(0,60)}), falling back to WASM…` } })
-        model = await tryLoadModel('wasm', progress)
-        activeDevice = 'wasm'
-      }
+      model = await tryLoadModel('wasm', progress)
+      activeDevice = 'wasm'
       loading = false
       self.postMessage({ type: 'loaded', id, device: activeDevice })
     } catch (err) {
@@ -153,7 +157,6 @@ self.onmessage = async (e) => {
       } else {
         result = await model.generate({ input_ids, attention_mask, ...genArgs })
       }
-      // Cache the full prompt KV state for next turn reuse
       if (result.past_key_values) {
         kvcache = { inputIds: inputArr, pastKeyValues: result.past_key_values }
       }
