@@ -61,7 +61,7 @@ env.allowLocalModels = true
 env.allowRemoteModels = false
 env.localModelPath = './'
 env.fetch = self.fetch
-env.backends.onnx.wasm.numThreads = 1
+env.backends.onnx.wasm.numThreads = 4
 
 // Bust stale transformers-cache entries: JSON configs always, plus any ONNX that was cached
 // before chunked reassembly was in place (those would be the small 780KB stub file, not the
