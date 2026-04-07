@@ -156,8 +156,8 @@ $('speak-btn').addEventListener('click', async () => {
   try {
     let messages, genConfig
     if (personaDesc) {
-      const wrapped = history.map(m => m.role === 'user' ? { role: 'user', content: `Roleplay as ${personaDesc}. User says: "${m.content}". Your reply as this character:` } : m)
-      messages = [...personaHistory, ...wrapped]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
+      const wrapMsg = m => m.role === 'user' ? { role: 'user', content: `Roleplay as ${personaDesc}. User says: "${m.content}". Your reply as this character:` } : m
+      messages = [...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
     } else {
       messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
