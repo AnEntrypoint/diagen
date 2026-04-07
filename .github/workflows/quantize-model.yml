@@ -114,7 +114,7 @@ jobs:
             "async function tryLoadModel(device, progress) {\n  return AutoModelForCausalLM.from_pretrained(MODEL_ID, {\n    dtype: DTYPE, device, progress_callback: progress,\n    model_file_name: 'model_q4f16'\n  })\n}",
             w, flags=re.MULTILINE)
           total = sum(sum(v['sizes']) for v in chunks.values())
-          w = re.sub(r'const DECODER_ONNX_MIN_SIZE = \d+', f'const DECODER_ONNX_MIN_SIZE = {int(total * 0.7)}', w)
+          w = re.sub(r'const DECODER_ONNX_MIN_SIZE = [\d\s\*]+', f'const DECODER_ONNX_MIN_SIZE = {int(total * 0.7)}', w)
           w = re.sub('decoder_model_merged_q4f16\.onnx', 'model_q4f16.onnx', w)
           open('gh-pages-src/demo/worker.js', 'w').write(w)
           print('worker.js updated')

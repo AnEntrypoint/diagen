@@ -57,7 +57,7 @@ env.backends.onnx.wasm.numThreads = 4
 // Bust stale transformers-cache entries: JSON configs always, plus any ONNX that was cached
 // before chunked reassembly was in place (those would be the small 780KB stub file, not the
 // full 453MB self-contained ONNX we serve via the fetch interceptor).
-const DECODER_ONNX_MIN_SIZE = 338102507 * 1024 * 1024 // 400MB — reassembled ONNX is ~453MB
+const DECODER_ONNX_MIN_SIZE = 338102507
 const cacheBust = (async () => {
   try {
     const c = await caches.open('transformers-cache')
