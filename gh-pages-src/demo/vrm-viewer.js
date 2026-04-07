@@ -243,6 +243,3 @@ export function setMouthOpen(v) {
   if (viewer) viewer.setMouthOpen(v)
 }
 
-export function setVRMPaused(v) {
-  paused = v
-}

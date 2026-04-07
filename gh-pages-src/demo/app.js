@@ -1,4 +1,4 @@
-import { initVRM, setMouthOpen, setVRMPaused } from './vrm-viewer.js'
+import { initVRM, setMouthOpen } from './vrm-viewer.js'
 const worker = new Worker('./worker.js?v=52', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -165,7 +165,6 @@ $('speak-btn').addEventListener('click', async () => {
   }
   history.push({ role: 'user', content: transcript })
   setState('generating'); addBubble('assistant', '')
-  setVRMPaused(true)
   try {
     let messages, genConfig
     if (personaDesc) {
@@ -178,9 +177,8 @@ $('speak-btn').addEventListener('click', async () => {
     const cleaned = text.trim()
     history.push({ role: 'assistant', content: cleaned })
     const last = $('chat').querySelector('.bubble.assistant:last-child'); if (last) last.textContent = cleaned
-    setVRMPaused(false)
     setState('speaking'); await speak(cleaned)
-  } catch (err) { setVRMPaused(false); $('status').textContent = `Error: ${err.message}` }
+  } catch (err) { $('status').textContent = `Error: ${err.message}` }
   setState('idle')
 })
 $('sheet-mic-btn').addEventListener('click', async () => {
@@ -205,7 +203,6 @@ const PERSONA_QUESTIONS = [
 async function buildPersonaHistory(desc) {
   const turns = []
   const wrap = q => ({ role: 'user', content: `User says: "${q}". Your reply as this character:` })
-  setVRMPaused(true)
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Building persona… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
     try {
@@ -214,7 +211,6 @@ async function buildPersonaHistory(desc) {
       turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
     } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
   }
-  setVRMPaused(false)
   return turns
 }
 $('persona-btn').addEventListener('click', async () => {

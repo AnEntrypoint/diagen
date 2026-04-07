@@ -88,7 +88,7 @@ const cacheBust = (async () => {
 })()
 
 const MODEL_ID = 'model'
-const DTYPE = { embed_tokens: 'q8', vision_encoder: 'q8', decoder_model_merged: 'q4f16' }
+const DTYPE = { embed_tokens: 'fp16', vision_encoder: 'q8', decoder_model_merged: 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null, activeDevice = 'wasm'
