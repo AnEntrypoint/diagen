@@ -1,0 +1,125 @@
+name: Quantize Qwen2.5-0.5B Abliterated for Browser
+
+on:
+  workflow_dispatch:
+    inputs:
+      hf_model:
+        description: 'HuggingFace model ID to convert'
+        default: 'huihui-ai/Qwen2.5-0.5B-Instruct-abliterated'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  quantize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install --upgrade pip "optimum[onnx]" "onnxruntime>=1.20" transformers huggingface_hub accelerate
+
+      - name: Download model
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          INPUT_HF_MODEL: ${{ inputs.hf_model }}
+        run: |
+          python -c "
+          import os; from huggingface_hub import snapshot_download
+          snapshot_download(repo_id=os.environ['INPUT_HF_MODEL'], local_dir='./src_model',
+            token=os.environ.get('HF_TOKEN') or None,
+            ignore_patterns=['*.msgpack','*.h5','flax_model*','tf_model*','rust_model*'])
+          "
+
+      - name: Export to ONNX
+        run: optimum-cli export onnx --model ./src_model --task text-generation-with-past --trust-remote-code ./onnx_fp32/
+
+      - name: Quantize to q4f16
+        run: |
+          python -c "
+          import os; os.makedirs('./onnx_q4f16', exist_ok=True)
+          from onnxruntime.python.tools.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+          q = MatMulNBitsQuantizer(model='./onnx_fp32/model.onnx', bits=4, block_size=128, is_symmetric=False)
+          q.quantize_model()
+          q.model.save_model_to_file('./onnx_q4f16/model_q4f16.onnx', use_external_data_format=False)
+          print('Quantized:', os.path.getsize('./onnx_q4f16/model_q4f16.onnx'), 'bytes')
+          "
+
+      - name: Copy config files
+        run: |
+          python -c "
+          import os, shutil
+          for f in os.listdir('./onnx_fp32'):
+            if not f.endswith('.onnx'):
+              shutil.copy2(f'./onnx_fp32/{f}', f'gh-pages-src/demo/model/{f}'); print('Copied:', f)
+          "
+
+      - name: Split ONNX and write manifest
+        run: |
+          python -c "
+          import os, json; CHUNK=99*1024*1024; out='gh-pages-src/demo/model/onnx'
+          os.makedirs(out, exist_ok=True); manifest={}
+          for fname in os.listdir('./onnx_q4f16'):
+            if not fname.endswith('.onnx'): continue
+            parts=[]
+            with open(f'./onnx_q4f16/{fname}','rb') as fh:
+              i=0
+              while True:
+                c=fh.read(CHUNK)
+                if not c: break
+                n=f'{fname}.part{i}'; open(f'{out}/{n}','wb').write(c); parts.append(n); i+=1
+            manifest[fname]=parts; print(fname,len(parts),'parts')
+          json.dump(manifest,open(f'{out}/manifest.json','w'),indent=2); print('manifest written')
+          "
+
+      - name: Update worker.js
+        run: |
+          cat > /tmp/update_worker.py << 'PYEOF'
+          import os, json, re
+
+          manifest = json.load(open('gh-pages-src/demo/model/onnx/manifest.json'))
+          chunks = {}
+          for fname, parts in manifest.items():
+            stem = re.sub(r'\.onnx$', '', fname)
+            sizes = [os.path.getsize(f'gh-pages-src/demo/model/onnx/{p}') for p in parts]
+            chunks[fname] = {'stem': stem, 'sizes': sizes}
+
+          cjs = 'const CHUNKS = {\n'
+          for k, v in chunks.items():
+            sz = ', '.join(str(s) for s in v['sizes'])
+            cjs += f"  '{k}': {{\n    stem: '{v['stem']}',\n    sizes: [{sz}]\n  }},\n"
+          cjs += '}'
+
+          w = open('gh-pages-src/demo/worker.js').read()
+          w = re.sub(r'const CHUNKS = \{[\s\S]*?\}(?=\s*\n)', cjs, w)
+          w = re.sub(r"import \{[^}]+\} from './transformers\.min\.js\?v=\d+'",
+            "import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=53'", w)
+          w = re.sub(r"const VISION_ENCODER_STUB = '[^']*'\n", '', w)
+          w = re.sub(r"  if \(url\.endsWith\('vision_encoder_quantized\.onnx'\)\) \{[\s\S]*?  \}\n", '', w)
+          w = re.sub(r'const DTYPE = \{[^}]+\}', "const DTYPE = { decoder_model_merged: 'q4f16' }", w)
+          w = re.sub(r'async function tryLoadModel\(device, progress\) \{[\s\S]*?^\}',
+            "async function tryLoadModel(device, progress) {\n  return AutoModelForCausalLM.from_pretrained(MODEL_ID, {\n    dtype: DTYPE, device, progress_callback: progress,\n    model_file_name: 'model_q4f16'\n  })\n}",
+            w, flags=re.MULTILINE)
+          total = sum(sum(v['sizes']) for v in chunks.values())
+          w = re.sub(r'const DECODER_ONNX_MIN_SIZE = \d+', f'const DECODER_ONNX_MIN_SIZE = {int(total * 0.7)}', w)
+          w = re.sub('decoder_model_merged_q4f16\.onnx', 'model_q4f16.onnx', w)
+          open('gh-pages-src/demo/worker.js', 'w').write(w)
+          print('worker.js updated')
+          PYEOF
+          python /tmp/update_worker.py
+
+      - name: Commit and push
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add gh-pages-src/demo/model/ gh-pages-src/demo/worker.js
+          git diff --cached --stat
+          git commit -m "quantize: Qwen2.5-0.5B abliterated q4f16 ONNX"
+          git push
