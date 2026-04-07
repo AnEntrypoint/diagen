@@ -4,8 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       hf_model:
-        description: 'HuggingFace model ID to convert'
+        description: 'Abliterated model for tokenizer/config'
         default: 'huihui-ai/Qwen2.5-0.5B-Instruct-abliterated'
+        required: true
+      onnx_model:
+        description: 'ONNX source model (pre-quantized q4f16)'
+        default: 'onnx-community/Qwen2.5-0.5B-Instruct'
         required: true
 
 permissions:
@@ -24,9 +28,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install --upgrade pip "optimum[onnx]" "onnxruntime==1.20.1" transformers huggingface_hub accelerate
+        run: pip install --upgrade pip transformers huggingface_hub
 
-      - name: Download model
+      - name: Download abliterated model (tokenizer + config only)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           INPUT_HF_MODEL: ${{ inputs.hf_model }}
@@ -35,34 +39,31 @@ jobs:
           import os; from huggingface_hub import snapshot_download
           snapshot_download(repo_id=os.environ['INPUT_HF_MODEL'], local_dir='./src_model',
             token=os.environ.get('HF_TOKEN') or None,
-            ignore_patterns=['*.msgpack','*.h5','flax_model*','tf_model*','rust_model*'])
+            ignore_patterns=['*.safetensors','*.bin','*.pt','*.gguf','*.msgpack','*.h5','flax_model*','tf_model*'])
+          print('Config files:', os.listdir('./src_model'))
           "
 
-      - name: Export to ONNX
-        run: optimum-cli export onnx --model ./src_model --task text-generation-with-past --trust-remote-code ./onnx_fp32/
-
-      - name: Quantize to q4f16
+      - name: Download pre-built q4f16 ONNX
+        env:
+          INPUT_ONNX_MODEL: ${{ inputs.onnx_model }}
         run: |
           python -c "
-          import os, onnxruntime; print('ORT version:', onnxruntime.__version__)
-          import onnxruntime.quantization as ortq; print(dir(ortq))
-          "
-          python -c "
-          import os; os.makedirs('./onnx_q4f16', exist_ok=True)
-          from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
-          q = MatMulNBitsQuantizer(model='./onnx_fp32/model.onnx', bits=4, block_size=128, is_symmetric=False)
-          q.quantize_model()
-          q.model.save_model_to_file('./onnx_q4f16/model_q4f16.onnx', use_external_data_format=False)
-          print('Quantized:', os.path.getsize('./onnx_q4f16/model_q4f16.onnx'), 'bytes')
+          import os; from huggingface_hub import hf_hub_download
+          os.makedirs('./onnx_q4f16', exist_ok=True)
+          fname = hf_hub_download(repo_id=os.environ['INPUT_ONNX_MODEL'],
+            filename='onnx/model_q4f16.onnx', local_dir='./onnx_dl')
+          import shutil; shutil.copy(fname, './onnx_q4f16/model_q4f16.onnx')
+          print('ONNX size:', os.path.getsize('./onnx_q4f16/model_q4f16.onnx'), 'bytes')
           "
 
-      - name: Copy config files
+      - name: Copy config files from abliterated model
         run: |
           python -c "
           import os, shutil
-          for f in os.listdir('./onnx_fp32'):
-            if not f.endswith('.onnx'):
-              shutil.copy2(f'./onnx_fp32/{f}', f'gh-pages-src/demo/model/{f}'); print('Copied:', f)
+          dst = 'gh-pages-src/demo/model'
+          for f in os.listdir('./src_model'):
+            if os.path.isfile(f'./src_model/{f}'):
+              shutil.copy2(f'./src_model/{f}', f'{dst}/{f}'); print('Copied:', f)
           "
 
       - name: Split ONNX and write manifest
@@ -125,5 +126,5 @@ jobs:
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add gh-pages-src/demo/model/ gh-pages-src/demo/worker.js
           git diff --cached --stat
-          git commit -m "quantize: Qwen2.5-0.5B abliterated q4f16 ONNX"
+          git commit -m "quantize: Qwen2.5-0.5B q4f16 ONNX (onnx-community), abliterated config"
           git push
