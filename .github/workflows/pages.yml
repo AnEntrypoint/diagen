@@ -30,9 +30,10 @@ jobs:
           git config http.postBuffer 524288000
           git config http.lowSpeedLimit 0
           git config http.lowSpeedTime 600
+          cp -r gh-pages-src /tmp/gh-pages-publish
           git fetch origin gh-pages || true
           git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
-          cp -r gh-pages-src/. .
+          cp -r /tmp/gh-pages-publish/. .
           git add -A
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "deploy: ${{ github.sha }}"
