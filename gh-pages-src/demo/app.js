@@ -156,8 +156,8 @@ $('speak-btn').addEventListener('click', async () => {
   try {
     let messages, genConfig
     if (personaDesc) {
-      const wrapMsg = m => m.role === 'user' ? { role: 'user', content: `Roleplay as ${personaDesc}. User says: "${m.content}". Your reply as this character:` } : m
-      messages = [...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
+      const wrapMsg = m => m.role === 'user' ? { role: 'user', content: `User says: "${m.content}". Your reply as this character:` } : m
+      messages = [{ role: 'system', content: `You are: ${personaDesc}` }, ...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
     } else {
       messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
@@ -190,11 +190,11 @@ const PERSONA_QUESTIONS = [
 ]
 async function buildPersonaHistory(desc) {
   const turns = []
-  const wrap = q => ({ role: 'user', content: `Roleplay as ${desc}. User says: "${q}". Your reply as this character:` })
+  const wrap = q => ({ role: 'user', content: `User says: "${q}". Your reply as this character:` })
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Building persona… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
     try {
-      const { text } = await sendWorker({ type: 'generate', messages: [wrap(q)], config: { maxNewTokens: 30, temperature: 0.9, repetitionPenalty: 1.15 } })
+      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, ...turns.map(m => m.role === 'user' ? wrap(m.content) : m), wrap(q)], config: { maxNewTokens: 30, temperature: 0.9, repetitionPenalty: 1.15 } })
       const reply = text.trim().split('\n')[0].trim()
       turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
     } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
