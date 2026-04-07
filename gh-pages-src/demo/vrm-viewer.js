@@ -151,7 +151,7 @@ class VRMViewer {
     const gltf = await loader.loadAsync(url)
     vrm = gltf.userData.vrm
     VRMUtils.removeUnnecessaryVertices(vrm.scene)
-    VRMUtils.combineSkeletons(vrm.scene)
+    if (VRMUtils.combineSkeletons) VRMUtils.combineSkeletons(vrm.scene)
     vrm.scene.rotation.y = Math.PI
     vrm.scene.scale.setScalar(1.323)
     vrm.scene.position.y = -0.28
