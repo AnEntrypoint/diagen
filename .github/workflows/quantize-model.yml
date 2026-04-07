@@ -118,6 +118,11 @@ jobs:
           w = re.sub('decoder_model_merged_q4f16\.onnx', 'model_q4f16.onnx', w)
           open('gh-pages-src/demo/worker.js', 'w').write(w)
           print('worker.js updated')
+          import re as re2
+          app = open('gh-pages-src/demo/app.js').read()
+          app = re2.sub(r"worker\.js\?v=\d+", "worker.js?v=53", app)
+          open('gh-pages-src/demo/app.js', 'w').write(app)
+          print('app.js updated')
           PYEOF
           python /tmp/update_worker.py
 
@@ -131,7 +136,7 @@ jobs:
           git config http.postBuffer 524288000
           git config http.lowSpeedLimit 0
           git config http.lowSpeedTime 600
-          git add gh-pages-src/demo/model/ gh-pages-src/demo/worker.js
+          git add gh-pages-src/demo/model/ gh-pages-src/demo/worker.js gh-pages-src/demo/app.js
           git diff --cached --stat
           git commit -m "quantize: Qwen2.5-0.5B q4f16 ONNX (onnx-community), abliterated config"
           git push
