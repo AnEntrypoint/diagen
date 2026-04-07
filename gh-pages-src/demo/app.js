@@ -196,8 +196,8 @@ async function buildPersonaHistory(desc) {
     try {
       const { text } = await sendWorker({ type: 'generate', messages: [wrap(q)], config: { maxNewTokens: 30, temperature: 0.9, repetitionPenalty: 1.15 } })
       const reply = text.trim().split('\n')[0].trim()
-      turns.push(wrap(q), { role: 'assistant', content: reply || '...' })
-    } catch { turns.push(wrap(q), { role: 'assistant', content: '...' }) }
+      turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
+    } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
   }
   return turns
 }
