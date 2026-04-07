@@ -206,7 +206,7 @@ async function buildPersonaHistory(desc) {
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Building persona… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
     try {
-      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, ...turns.map(m => m.role === 'user' ? wrap(m.content) : m), wrap(q)], config: { maxNewTokens: 30, temperature: 0.9, repetitionPenalty: 1.15 } })
+      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, wrap(q)], config: { maxNewTokens: 30, temperature: 0.9, repetitionPenalty: 1.15 } })
       const reply = text.trim().split('\n')[0].trim()
       turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
     } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
