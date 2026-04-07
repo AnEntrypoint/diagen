@@ -1,15 +1,10 @@
-import { AutoProcessor, Qwen3_5ForConditionalGeneration, TextStreamer, env } from './transformers.min.js?v=40'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=53'
 
 const MODEL_BASE = './model'
-const VISION_ENCODER_STUB = 'CAg6fQooCgxwaXhlbF92YWx1ZXMSDmltYWdlX2ZlYXR1cmVzIghJZGVudGl0eRITdmlzaW9uX2VuY29kZXJfc3R1YlocCgxwaXhlbF92YWx1ZXMSDAoKCAESBgoACgAKAGIeCg5pbWFnZV9mZWF0dXJlcxIMCgoIARIGCgAKAAoAQgQKABAR'
 const CHUNKS = {
-  'decoder_model_merged_q4f16.onnx': {
-    stem: 'decoder_model_merged_q4f16.onnx',
-    sizes: [103809024, 103809024, 103809024, 103809024, 59248715]
-  },
-  'embed_tokens_quantized.onnx': {
-    stem: 'embed_tokens_q8',
-    sizes: [103809024, 103809024, 46662328]
+  'model_q4f16.onnx': {
+    stem: 'model_q4f16',
+    sizes: [103809024, 103809024, 103809024, 103809024, 67767486]
   },
 }
 
@@ -44,10 +39,6 @@ self.fetch = async (input, init) => {
   for (const [fname, { stem, sizes }] of Object.entries(CHUNKS)) {
     if (url.endsWith(fname)) return fetchChunked(stem, sizes)
   }
-  if (url.endsWith('vision_encoder_quantized.onnx')) {
-    const bin = Uint8Array.from(atob(VISION_ENCODER_STUB), c => c.charCodeAt(0))
-    return new Response(bin.buffer, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
-  }
   if (url.endsWith('/model/config.json')) {
     const resp = await origFetch(input, init)
     const json = await resp.json()
@@ -66,14 +57,14 @@ env.backends.onnx.wasm.numThreads = 4
 // Bust stale transformers-cache entries: JSON configs always, plus any ONNX that was cached
 // before chunked reassembly was in place (those would be the small 780KB stub file, not the
 // full 453MB self-contained ONNX we serve via the fetch interceptor).
-const DECODER_ONNX_MIN_SIZE = 400 * 1024 * 1024 // 400MB — reassembled ONNX is ~453MB
+const DECODER_ONNX_MIN_SIZE = 338102507 * 1024 * 1024 // 400MB — reassembled ONNX is ~453MB
 const cacheBust = (async () => {
   try {
     const c = await caches.open('transformers-cache')
     const keys = await c.keys()
     for (const k of keys) {
       if (k.url.includes('/model/') && k.url.endsWith('.json')) { await c.delete(k); continue }
-      if (k.url.includes('decoder_model_merged_q4f16.onnx')) {
+      if (k.url.includes('model_q4f16.onnx')) {
         const resp = await c.match(k)
         if (resp) {
           const buf = await resp.clone().arrayBuffer()
@@ -88,7 +79,7 @@ const cacheBust = (async () => {
 })()
 
 const MODEL_ID = 'model'
-const DTYPE = { embed_tokens: 'fp16', vision_encoder: 'q8', decoder_model_merged: 'q4f16' }
+const DTYPE = { decoder_model_merged: 'q4f16' }
 
 let model = null, processor = null
 let loading = false, loadError = null, activeDevice = 'wasm'
@@ -96,9 +87,9 @@ let loading = false, loadError = null, activeDevice = 'wasm'
 let kvcache = null
 
 async function tryLoadModel(device, progress) {
-  return Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_ID, {
+  return AutoModelForCausalLM.from_pretrained(MODEL_ID, {
     dtype: DTYPE, device, progress_callback: progress,
-    model_file_name: 'decoder_model_merged'
+    model_file_name: 'model_q4f16'
   })
 }
 

@@ -1,14 +1,14 @@
 {
-  "bos_token_id": 248044,
+  "bos_token_id": 151643,
+  "pad_token_id": 151643,
   "do_sample": true,
   "eos_token_id": [
-    248046,
-    248044
+    151645,
+    151643
   ],
-  "pad_token_id": 248044,
-  "temperature": 0.6,
+  "repetition_penalty": 1.1,
+  "temperature": 0.7,
+  "top_p": 0.8,
   "top_k": 20,
-  "top_p": 0.95,
-  "transformers_version": "5.3.0.dev0",
-  "trust_remote_code": false
+  "transformers_version": "4.37.0"
 }
