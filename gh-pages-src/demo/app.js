@@ -1,3 +1,4 @@
+import { initVRM, setMouthOpen } from './vrm-viewer.js'
 const worker = new Worker('./worker.js?v=52', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -66,8 +67,19 @@ function playPcm(pcm) {
   if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContext({ sampleRate: 24000 })
   return audioCtx.resume().then(() => {
     const buf = audioCtx.createBuffer(1, pcm.length, 24000); buf.copyToChannel(pcm, 0)
-    const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(audioCtx.destination)
-    return new Promise(r => { src.onended = r; src.start() })
+    const src = audioCtx.createBufferSource(); src.buffer = buf
+    const analyser = audioCtx.createAnalyser(); analyser.fftSize = 256
+    src.connect(analyser); analyser.connect(audioCtx.destination)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    let rafId
+    const tick = () => {
+      analyser.getByteTimeDomainData(data)
+      let sum = 0; for (let i = 0; i < data.length; i++) { const s = (data[i] - 128) / 128; sum += s * s }
+      setMouthOpen(Math.min(1, Math.sqrt(sum / data.length) * 6))
+      rafId = requestAnimationFrame(tick)
+    }
+    tick()
+    return new Promise(r => { src.onended = () => { cancelAnimationFrame(rafId); setMouthOpen(0); r() }; src.start() })
   })
 }
 function ttsLoadFailed(msg) {
@@ -215,4 +227,5 @@ $('persona-btn').addEventListener('click', async () => {
   $('persona-btn').disabled = false
 })
 loadModel()
+initVRM($('vrm-canvas')).catch(err => { console.warn('[VRM] Failed to load:', err.message); $('vrm-canvas').style.display = 'none' })
 window.__app = { sendWorker, getPersonaHistory: () => personaHistory, setPersonaHistory: (h) => { personaHistory = h }, getPersonaPrefill: () => personaPrefill, setPersonaPrefill: (p) => { personaPrefill = p }, getPersonaDesc: () => personaDesc, getHistory: () => history, clearHistory: () => { history.length = 0 }, isModelReady: () => modelReady, isTtsReady: () => ttsReady, speak }
