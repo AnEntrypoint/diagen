@@ -186,6 +186,7 @@ class VRMViewer {
     let last = performance.now()
     const animate = () => {
       requestAnimationFrame(animate)
+      if (paused) return
       const now = performance.now(), dt = Math.min((now - last) / 1000, 0.1); last = now
       vrm.update(dt)
       this._update(dt)
@@ -230,6 +231,7 @@ class VRMViewer {
 }
 
 let viewer = null
+let paused = false
 
 export async function initVRM(canvas) {
   viewer = new VRMViewer(canvas)
@@ -239,4 +241,8 @@ export async function initVRM(canvas) {
 
 export function setMouthOpen(v) {
   if (viewer) viewer.setMouthOpen(v)
+}
+
+export function setVRMPaused(v) {
+  paused = v
 }
