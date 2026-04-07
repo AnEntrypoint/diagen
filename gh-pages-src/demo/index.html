@@ -39,6 +39,14 @@
     #progress-text { font-size: 0.75rem; padding: 0.4rem 0.6rem; color: #888 }
     #progress-track { height: 4px; background: #2d2d3f }
     #progress-bar { height: 4px; width: 0%; background: #a78bfa; transition: width 0.3s }
+    #vrm-canvas {
+      width: 100%;
+      max-width: 600px;
+      height: 320px;
+      border-radius: 10px;
+      margin-bottom: 0.75rem;
+      display: block;
+    }
     #chat {
       width: 100%;
       max-width: 600px;
@@ -48,8 +56,8 @@
       flex-direction: column;
       gap: 0.75rem;
       padding: 0.5rem 0;
-      min-height: 300px;
-      max-height: calc(100dvh - 220px);
+      min-height: 120px;
+      max-height: calc(100dvh - 520px);
     }
     .bubble {
       max-width: 80%;
@@ -191,6 +199,7 @@
 <body>
   <a href="../" class="back-link">&#8592; Back to diagen</a>
   <h1>Qwen3 Voice Chat</h1>
+  <canvas id="vrm-canvas"></canvas>
   <div id="progress-wrap">
     <div id="progress-text">Initializing…</div>
     <div id="progress-track"><div id="progress-bar"></div></div>
