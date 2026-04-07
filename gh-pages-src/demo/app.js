@@ -1,4 +1,4 @@
-import { initVRM, setMouthOpen } from './vrm-viewer.js'
+import { initVRM, setMouthOpen, setVRMPaused } from './vrm-viewer.js'
 const worker = new Worker('./worker.js?v=52', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -165,11 +165,12 @@ $('speak-btn').addEventListener('click', async () => {
   }
   history.push({ role: 'user', content: transcript })
   setState('generating'); addBubble('assistant', '')
+  setVRMPaused(true)
   try {
     let messages, genConfig
     if (personaDesc) {
       const wrapMsg = m => m.role === 'user' ? { role: 'user', content: `User says: "${m.content}". Your reply as this character:` } : m
-      messages = [{ role: 'system', content: `You are: ${personaDesc}` }, ...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
+      messages = [{ role: 'system', content: `You are: ${personaDesc}` }, ...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 40, temperature: 0.8 }
     } else {
       messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
@@ -177,8 +178,9 @@ $('speak-btn').addEventListener('click', async () => {
     const cleaned = text.trim()
     history.push({ role: 'assistant', content: cleaned })
     const last = $('chat').querySelector('.bubble.assistant:last-child'); if (last) last.textContent = cleaned
+    setVRMPaused(false)
     setState('speaking'); await speak(cleaned)
-  } catch (err) { $('status').textContent = `Error: ${err.message}` }
+  } catch (err) { setVRMPaused(false); $('status').textContent = `Error: ${err.message}` }
   setState('idle')
 })
 $('sheet-mic-btn').addEventListener('click', async () => {
@@ -203,14 +205,16 @@ const PERSONA_QUESTIONS = [
 async function buildPersonaHistory(desc) {
   const turns = []
   const wrap = q => ({ role: 'user', content: `User says: "${q}". Your reply as this character:` })
+  setVRMPaused(true)
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Building persona… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
     try {
-      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, wrap(q)], config: { maxNewTokens: 30, temperature: 0.9, repetitionPenalty: 1.15 } })
+      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, ...turns.map(m => m.role === 'user' ? wrap(m.content) : m), wrap(q)], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
       const reply = text.trim().split('\n')[0].trim()
       turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
     } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
   }
+  setVRMPaused(false)
   return turns
 }
 $('persona-btn').addEventListener('click', async () => {
