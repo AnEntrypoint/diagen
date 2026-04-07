@@ -95,7 +95,8 @@ jobs:
           for fname, parts in manifest.items():
             stem = re.sub(r'\.onnx$', '', fname)
             sizes = [os.path.getsize(f'gh-pages-src/demo/model/onnx/{p}') for p in parts]
-            chunks[fname] = {'stem': stem, 'sizes': sizes}
+            quantized_key = re.sub(r'\.onnx$', '_quantized.onnx', fname)
+            chunks[quantized_key] = {'stem': stem, 'sizes': sizes}
 
           cjs = 'const CHUNKS = {\n'
           for k, v in chunks.items():
@@ -106,7 +107,7 @@ jobs:
           w = open('gh-pages-src/demo/worker.js').read()
           w = re.sub(r'const CHUNKS = \{[\s\S]*?\}(?=\s*\n)', cjs, w)
           w = re.sub(r"import \{[^}]+\} from './transformers\.min\.js\?v=\d+'",
-            "import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=53'", w)
+            "import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=54'", w)
           w = re.sub(r"const VISION_ENCODER_STUB = '[^']*'\n", '', w)
           w = re.sub(r"  if \(url\.endsWith\('vision_encoder_quantized\.onnx'\)\) \{[\s\S]*?  \}\n", '', w)
           w = re.sub(r'const DTYPE = \{[^}]+\}', "const DTYPE = { decoder_model_merged: 'q4f16' }", w)
@@ -120,7 +121,7 @@ jobs:
           print('worker.js updated')
           import re as re2
           app = open('gh-pages-src/demo/app.js').read()
-          app = re2.sub(r"worker\.js\?v=\d+", "worker.js?v=53", app)
+          app = re2.sub(r"worker\.js\?v=\d+", "worker.js?v=54", app)
           open('gh-pages-src/demo/app.js', 'w').write(app)
           print('app.js updated')
           PYEOF

@@ -1,8 +1,8 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=53'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=54'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
-  'model_q4f16.onnx': {
+  'model_q4f16_quantized.onnx': {
     stem: 'model_q4f16',
     sizes: [103809024, 103809024, 103809024, 103809024, 67767486]
   },
@@ -64,7 +64,7 @@ const cacheBust = (async () => {
     const keys = await c.keys()
     for (const k of keys) {
       if (k.url.includes('/model/') && k.url.endsWith('.json')) { await c.delete(k); continue }
-      if (k.url.includes('model_q4f16.onnx')) {
+      if (k.url.includes('model_q4f16_quantized.onnx') || k.url.includes('model_q4f16.onnx')) {
         const resp = await c.match(k)
         if (resp) {
           const buf = await resp.clone().arrayBuffer()
