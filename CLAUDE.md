@@ -19,3 +19,11 @@ This model choice is non-negotiable. Do not substitute with a different model.
 ## Testing
 
 Run `npm test` (vitest). 120 tests across 7 files. Pure functions are extracted into shared modules (`server-utils.mjs`, `animation-core.mjs`, `tokenizer.mjs`) that both source files and tests import.
+
+## Quantize Workflow
+
+To switch to Qwen2.5-0.5B abliterated (faster, roleplay-focused):
+- Run `.github/workflows/quantize-model.yml` via GitHub Actions (workflow_dispatch)
+- Requires `HF_TOKEN` secret if downloading gated models
+- Workflow: downloads PyTorch weights → optimum-cli ONNX export → MatMulNBitsQuantizer q4f16 → splits into ≤99MB parts → commits model files + updates worker.js to main
+- `*.py` is in .gitignore — Python helpers are inlined as workflow heredocs, not separate files
