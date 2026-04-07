@@ -45,10 +45,9 @@ jobs:
         run: |
           python -c "
           import os; os.makedirs('./onnx_q4f16', exist_ok=True)
-          from onnxruntime.python.tools.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
-          q = MatMulNBitsQuantizer(model='./onnx_fp32/model.onnx', bits=4, block_size=128, is_symmetric=False)
-          q.quantize_model()
-          q.model.save_model_to_file('./onnx_q4f16/model_q4f16.onnx', use_external_data_format=False)
+          from onnxruntime.quantization import MatMulNBitsQuantizer
+          q = MatMulNBitsQuantizer('./onnx_fp32/model.onnx', './onnx_q4f16/model_q4f16.onnx', bits=4, block_size=128, is_symmetric=False)
+          q.quantize()
           print('Quantized:', os.path.getsize('./onnx_q4f16/model_q4f16.onnx'), 'bytes')
           "
 
