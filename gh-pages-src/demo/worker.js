@@ -1,7 +1,11 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=54'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=55'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
+  'model_q4f16.onnx': {
+    stem: 'model_q4f16',
+    sizes: [103809024, 103809024, 103809024, 103809024, 67767486]
+  },
   'model_q4f16_quantized.onnx': {
     stem: 'model_q4f16',
     sizes: [103809024, 103809024, 103809024, 103809024, 67767486]
@@ -79,7 +83,7 @@ const cacheBust = (async () => {
 })()
 
 const MODEL_ID = 'model'
-const DTYPE = { decoder_model_merged: 'q4f16' }
+const DTYPE = 'q4f16'
 
 let model = null, processor = null
 let loading = false, loadError = null, activeDevice = 'wasm'
