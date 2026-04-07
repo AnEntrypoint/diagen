@@ -24,7 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install --upgrade pip "optimum[onnx]" "onnxruntime>=1.20" transformers huggingface_hub accelerate
+        run: pip install --upgrade pip "optimum[onnx]" "onnxruntime==1.20.1" transformers huggingface_hub accelerate
 
       - name: Download model
         env:
@@ -44,10 +44,15 @@ jobs:
       - name: Quantize to q4f16
         run: |
           python -c "
+          import os, onnxruntime; print('ORT version:', onnxruntime.__version__)
+          import onnxruntime.quantization as ortq; print(dir(ortq))
+          "
+          python -c "
           import os; os.makedirs('./onnx_q4f16', exist_ok=True)
-          from onnxruntime.quantization import MatMulNBitsQuantizer
-          q = MatMulNBitsQuantizer('./onnx_fp32/model.onnx', './onnx_q4f16/model_q4f16.onnx', bits=4, block_size=128, is_symmetric=False)
-          q.quantize()
+          from onnxruntime.quantization.matmul_nbits_quantizer import MatMulNBitsQuantizer
+          q = MatMulNBitsQuantizer(model='./onnx_fp32/model.onnx', bits=4, block_size=128, is_symmetric=False)
+          q.quantize_model()
+          q.model.save_model_to_file('./onnx_q4f16/model_q4f16.onnx', use_external_data_format=False)
           print('Quantized:', os.path.getsize('./onnx_q4f16/model_q4f16.onnx'), 'bytes')
           "
 
