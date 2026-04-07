@@ -1,4 +1,4 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=57'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=58'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -24,7 +24,7 @@ function fetchChunked(stem, sizes) {
       }
       const i = idx++
       self.postMessage({ type: 'progress', progress: { progress: Math.round(off / total * 80), file: `${stem}.part${i}` } })
-      let buf = await origFetch(`${MODEL_BASE}/onnx/${stem}.part${i}`).then(r => r.arrayBuffer())
+      let buf = await origFetch(`${MODEL_BASE}/onnx/${stem}.onnx.part${i}`).then(r => r.arrayBuffer())
       off += buf.byteLength
       controller.enqueue(new Uint8Array(buf))
       buf = null
