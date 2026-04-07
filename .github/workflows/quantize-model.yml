@@ -61,8 +61,9 @@ jobs:
           python -c "
           import os, shutil
           dst = 'gh-pages-src/demo/model'
+          skip = {'.gitattributes', 'LICENSE', 'README.md', 'eval.sh'}
           for f in os.listdir('./src_model'):
-            if os.path.isfile(f'./src_model/{f}'):
+            if os.path.isfile(f'./src_model/{f}') and f not in skip:
               shutil.copy2(f'./src_model/{f}', f'{dst}/{f}'); print('Copied:', f)
           "
 
@@ -119,6 +120,9 @@ jobs:
           print('worker.js updated')
           PYEOF
           python /tmp/update_worker.py
+
+      - name: Remove stray gitattributes from model dir
+        run: rm -f gh-pages-src/demo/model/.gitattributes
 
       - name: Commit and push
         run: |
