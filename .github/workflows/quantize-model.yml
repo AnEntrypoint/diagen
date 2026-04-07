@@ -128,6 +128,9 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config http.postBuffer 524288000
+          git config http.lowSpeedLimit 0
+          git config http.lowSpeedTime 600
           git add gh-pages-src/demo/model/ gh-pages-src/demo/worker.js
           git diff --cached --stat
           git commit -m "quantize: Qwen2.5-0.5B q4f16 ONNX (onnx-community), abliterated config"
