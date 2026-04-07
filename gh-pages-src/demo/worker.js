@@ -1,4 +1,4 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=56'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=57'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -68,9 +68,9 @@ const cacheBust = (async () => {
         const resp = await c.match(k)
         if (resp) {
           const buf = await resp.clone().arrayBuffer()
-          if (buf.byteLength < DECODER_ONNX_MIN_SIZE) {
+          if (buf.byteLength < DECODER_ONNX_MIN_SIZE || new Uint8Array(buf.slice(0,1))[0] === 0x3C) {
             await c.delete(k)
-            console.log('[worker] Cleared stale small ONNX from cache:', k.url, buf.byteLength)
+            console.log('[worker] Cleared stale ONNX from cache:', k.url, buf.byteLength)
           }
         }
       }
