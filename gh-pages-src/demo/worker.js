@@ -1,4 +1,4 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=59'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=60'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -150,7 +150,7 @@ self.onmessage = async (e) => {
     const { messages, config = {} } = e.data
     try {
       const tokens = []
-      const formatted = messages.map(m => ({ role: m.role, content: [{ type: 'text', text: m.content }] }))
+      const formatted = messages.map(m => ({ role: m.role, content: m.content }))
       const promptText = processor.apply_chat_template(formatted, { add_generation_prompt: config.addGenerationPrompt !== false, tokenize: false })
       const { input_ids, attention_mask } = await processor.tokenizer(promptText, { return_tensors: 'pt' })
       const inputArr = Array.from(input_ids.data)
