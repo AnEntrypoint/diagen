@@ -1,5 +1,5 @@
 import { initVRM, setMouthOpen } from './vrm-viewer.js'
-const worker = new Worker('./worker.js?v=62', { type: 'module' })
+const worker = new Worker('./worker.js?v=63', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
