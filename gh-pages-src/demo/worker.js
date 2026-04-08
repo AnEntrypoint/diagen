@@ -1,4 +1,4 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=61'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=62'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -102,22 +102,8 @@ self.onmessage = async (e) => {
     try {
       const progress = (p) => self.postMessage({ type: 'progress', progress: p })
       processor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progress })
-      const gpuAdapter = (typeof navigator !== 'undefined' && navigator.gpu) ? await navigator.gpu.requestAdapter().catch(() => null) : null
-      if (gpuAdapter) {
-        try {
-          env.backends.onnx.wasm.wasmPaths = './ort/'
-          model = await tryLoadModel('webgpu', progress)
-          activeDevice = 'webgpu'
-        } catch (gpuErr) {
-          self.postMessage({ type: 'progress', progress: { progress: 0, file: `WebGPU failed (${gpuErr.message?.slice(0,60) ?? gpuErr}), falling back to WASM…` } })
-          env.backends.onnx.wasm.wasmPaths = undefined
-          model = await tryLoadModel('wasm', progress)
-          activeDevice = 'wasm'
-        }
-      } else {
-        model = await tryLoadModel('wasm', progress)
-        activeDevice = 'wasm'
-      }
+      model = await tryLoadModel('wasm', progress)
+      activeDevice = 'wasm'
       loading = false
       self.postMessage({ type: 'loaded', id, device: activeDevice })
     } catch (err) {
