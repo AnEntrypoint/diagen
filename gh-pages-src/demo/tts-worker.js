@@ -192,35 +192,27 @@ async function handleLoad() {
   const modelWeights = await fetchBufWithCache(MODEL_URL, 'tts-model')
   model = new Model(modelWeights)
 
-  self.postMessage({ type: 'status', status: 'Loading voices...' })
   voiceIndexMap = {}
-  const allVoices = [...VOICE_NAMES]
-
-  for (const name of VOICE_NAMES) {
-    self.postMessage({ type: 'status', status: `Loading voice: ${name}` })
-    const voiceData = await fetchBufWithCache(`${HF_BASE}/embeddings_v2/${name}.safetensors`, `tts-voice-${name}`)
-    voiceIndexMap[name] = model.add_voice(voiceData)
-  }
-
-  // Load custom voices from pre-encoded safetensors
   customVoiceIndexMap = {}
-  for (const name of CUSTOM_VOICE_NAMES) {
-    try {
-      self.postMessage({ type: 'status', status: `Loading custom voice: ${name}` })
-      const voiceData = await fetchBufWithCache(`./voices/${name}.safetensors`, `tts-voice-${name}`)
-      customVoiceIndexMap[name] = model.add_voice(voiceData)
-      allVoices.push(name)
-    } catch (e) {
-      self.postMessage({ type: 'status', status: `Custom voice ${name} not available` })
-      console.warn(`Failed to load custom voice ${name}:`, e)
-    }
-  }
-
-  self.postMessage({ type: 'voices_loaded', voices: allVoices, defaultVoice: DEFAULT_VOICE })
+  self.postMessage({ type: 'voices_loaded', voices: [...VOICE_NAMES, ...CUSTOM_VOICE_NAMES], defaultVoice: DEFAULT_VOICE })
   self.postMessage({ type: 'loaded' })
 }
 
+async function handleLoadVoice(name) {
+  if (voiceIndexMap[name] != null || customVoiceIndexMap[name] != null) return
+  self.postMessage({ type: 'status', status: `Loading voice: ${name}` })
+  if (CUSTOM_VOICE_NAMES.includes(name)) {
+    const voiceData = await fetchBufWithCache(`./voices/${name}.safetensors`, `tts-voice-${name}`)
+    customVoiceIndexMap[name] = model.add_voice(voiceData)
+  } else {
+    const voiceData = await fetchBufWithCache(`${HF_BASE}/embeddings_v2/${name}.safetensors`, `tts-voice-${name}`)
+    voiceIndexMap[name] = model.add_voice(voiceData)
+  }
+  self.postMessage({ type: 'voice_ready', voice: name })
+}
+
 async function handleGenerate(text, voiceName) {
+  if (voiceIndexMap[voiceName] == null && customVoiceIndexMap[voiceName] == null) await handleLoadVoice(voiceName)
   const idx = voiceIndexMap[voiceName] ?? customVoiceIndexMap[voiceName] ?? voiceIndexMap[DEFAULT_VOICE]
   const [processedText, framesAfterEos] = model.prepare_text(text)
   const tokenIds = tokenizer.encode(processedText)
@@ -237,6 +229,7 @@ self.onmessage = async (e) => {
   const { type } = e.data
   try {
     if (type === 'load') await handleLoad()
+    else if (type === 'load_voice') await handleLoadVoice(e.data.voice)
     else if (type === 'generate') await handleGenerate(e.data.data?.text || e.data.text, e.data.data?.voice || e.data.voice || DEFAULT_VOICE)
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message })
