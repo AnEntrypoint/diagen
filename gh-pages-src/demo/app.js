@@ -223,7 +223,7 @@ $('persona-btn').addEventListener('click', async () => {
   $('persona-btn').disabled = true
   const desc = sheet.replace(/^(i am|i'm|name:|character:)\s*/i, '').trim()
   personaDesc = desc; history.length = 0
-  personaHistory = await buildPersonaHistory(desc)
+  personaHistory = [{ role: 'user', content: `you are ${sheet}` }, { role: 'assistant', content: 'ok' }, ...await buildPersonaHistory(desc)]
   await sendWorker({ type: 'reset' })
   personaPrefill = null
   console.log('[Persona] Active:', desc, personaHistory)
