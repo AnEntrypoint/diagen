@@ -1,4 +1,4 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=58'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=59'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -139,6 +139,12 @@ self.onmessage = async (e) => {
     return
   }
 
+
+  if (type === 'reset') {
+    kvcache = null
+    self.postMessage({ type: 'reset', id })
+    return
+  }
   if (type === 'generate') {
     if (!model) { self.postMessage({ type: 'error', message: loadError ?? 'Model not loaded', id }); return }
     const { messages, config = {} } = e.data
