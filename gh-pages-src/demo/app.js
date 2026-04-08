@@ -169,8 +169,7 @@ $('speak-btn').addEventListener('click', async () => {
   try {
     let messages, genConfig
     if (personaDesc) {
-      const wrapMsg = m => m.role === 'user' ? { role: 'user', content: `User says: "${m.content}". Your reply as this character:` } : m
-      messages = [{ role: 'system', content: `You are a character in a game — not an AI, not an assistant, not an agent. You are: ${personaDesc}. Stay in character at all times. Never break the fourth wall. Never acknowledge being an AI.` }, ...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 120, temperature: 0.8 }
+      messages = [{ role: 'system', content: `You are ${personaDesc}. You are a character in a game world — not an AI, not an assistant. Speak only as this character. Never break character. Never say you are an AI.` }, ...personaHistory, ...history]; genConfig = { maxNewTokens: 120, temperature: 0.8 }
     } else {
       messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
@@ -205,15 +204,14 @@ const PERSONA_QUESTIONS = [
 ]
 async function buildPersonaHistory(desc) {
   const turns = []
-  const wrap = q => ({ role: 'user', content: `User says: "${q}". Your reply as this character:` })
+  const sys = `You are ${desc}. You are a character in a game world — not an AI, not an assistant. Speak only as this character. Never break character. Never say you are an AI.`
+  const wrap = q => ({ role: 'user', content: q })
   setVRMPaused(true)
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Shaping character… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
-    try {
-      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are a character in a game — not an AI, not an assistant, not an agent. You are: ${desc}. Stay in character at all times. Never break the fourth wall. Never acknowledge being an AI.` }, ...turns.map(m => m.role === 'user' ? wrap(m.content) : m), wrap(q)], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
-      const reply = text.trim().split('\n')[0].trim()
-      turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
-    } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
+    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, wrap(q)], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
+    const reply = text.trim().split('\n')[0].trim()
+    turns.push(wrap(q), { role: 'assistant', content: reply || '...' })
   }
   setVRMPaused(false)
   return turns
