@@ -19,6 +19,6 @@ abliterated-lora-q4-onnx/
 abliterated-merged-onnx/
 onnx-cache/
 onnx-export-venv/
-*.py
+encode_venv/
 *.err
 *.png

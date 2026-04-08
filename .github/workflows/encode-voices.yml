@@ -1,0 +1,52 @@
+name: Encode Custom Voices for Pocket TTS
+
+on:
+  push:
+    paths:
+      - 'gh-pages-src/demo/voices/*.wav'
+      - 'encode_voices.py'
+      - '.github/workflows/encode-voices.yml'
+  workflow_dispatch:
+
+jobs:
+  encode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Cache pocket-tts dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pocket-tts-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-pocket-tts-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install torch torchaudio safetensors
+          pip install git+https://github.com/kyutai-labs/pocket-tts.git
+
+      - name: Encode voices
+        run: python encode_voices.py
+
+      - name: Check for generated files
+        run: ls -lh gh-pages-src/demo/voices/*.safetensors || echo "No safetensors files generated"
+
+      - name: Commit encoded voices
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet gh-pages-src/demo/voices/; then
+            echo "No changes to commit"
+          else
+            git add gh-pages-src/demo/voices/*.safetensors
+            git commit -m "Encode custom voices for pocket-tts" || echo "Nothing to commit"
+            git push || echo "Could not push (no changes)"
+          fi

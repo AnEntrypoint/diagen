@@ -4,12 +4,13 @@ const HF_BASE = 'https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/
 const MODEL_URL = `${HF_BASE}/tts_b6369a24.safetensors`
 const TOKENIZER_URL = `${HF_BASE}/tokenizer.model`
 const VOICE_NAMES = ['alba', 'marius', 'javert', 'fantine', 'cosette', 'eponine', 'azelma']
+const CUSTOM_VOICE_NAMES = ['cleetus', 'vampire']
 const DEFAULT_VOICE = 'alba'
 const CACHE_NAME = 'tts-wasm-cache'
 
 const wasmModulePromise = WebAssembly.compileStreaming(fetch('./wasm_pocket_tts_bg.wasm'))
 
-let model = null, tokenizer = null, voiceIndexMap = {}
+let model = null, tokenizer = null, voiceIndexMap = {}, customVoiceIndexMap = {}
 
 function decodeSentencepieceModel(buffer) {
   let pos = 0
@@ -120,6 +121,64 @@ async function fetchBufWithCache(url, cacheKey) {
   }
 }
 
+async function loadCustomVoiceState(wavBuffer) {
+  // Decode WAV to 24kHz mono audio
+  const audioData = decodeWavTo24k(wavBuffer)
+
+  // Create KV cache state by running prompt_text with voice audio
+  // This requires calling model.prepare_voice_state(audioData)
+  // For now, we'll need to implement voice encoding in Rust/WASM
+  // or use a Python backend to pre-encode voices
+
+  // Placeholder: return empty state that will be replaced by pre-encoded versions
+  return new Uint8Array(0)
+}
+
+function decodeWavTo24k(buffer) {
+  const view = new DataView(buffer)
+  const channels = view.getUint16(22, true)
+  const sampleRate = view.getUint32(24, true)
+  const byteRate = view.getUint32(28, true)
+  const blockAlign = view.getUint16(32, true)
+  const bitsPerSample = view.getUint16(34, true)
+
+  let dataOffset = 36
+  while (dataOffset < buffer.byteLength) {
+    const chunkId = new TextDecoder().decode(new Uint8Array(buffer, dataOffset, 4))
+    const chunkSize = view.getUint32(dataOffset + 4, true)
+    if (chunkId === 'data') break
+    dataOffset += 8 + chunkSize
+  }
+
+  const numSamples = Math.floor((buffer.byteLength - dataOffset - 8) / (channels * bitsPerSample / 8))
+  const mono = new Float32Array(numSamples)
+  const bytesPerSample = bitsPerSample / 8
+
+  for (let i = 0; i < numSamples; i++) {
+    let sample = 0
+    for (let ch = 0; ch < channels; ch++) {
+      const offset = dataOffset + 8 + i * channels * bytesPerSample + ch * bytesPerSample
+      if (bitsPerSample === 16) {
+        sample += view.getInt16(offset, true)
+      } else if (bitsPerSample === 32) {
+        sample += view.getInt32(offset, true)
+      }
+    }
+    mono[i] = (sample / channels) / (bitsPerSample === 16 ? 32768 : 2147483648)
+  }
+
+  if (sampleRate === 24000) return mono
+  const ratio = sampleRate / 24000
+  const out = new Float32Array(Math.round(numSamples / ratio))
+  for (let i = 0; i < out.length; i++) {
+    const idx = i * ratio
+    const lo = Math.floor(idx)
+    const hi = Math.min(lo + 1, numSamples - 1)
+    out[i] = mono[lo] * (1 - (idx - lo)) + mono[hi] * (idx - lo)
+  }
+  return out
+}
+
 async function handleLoad() {
   self.postMessage({ type: 'status', status: 'Initializing WASM...' })
   const wasmModule = await wasmModulePromise
@@ -135,18 +194,34 @@ async function handleLoad() {
 
   self.postMessage({ type: 'status', status: 'Loading voices...' })
   voiceIndexMap = {}
+  const allVoices = [...VOICE_NAMES]
+
   for (const name of VOICE_NAMES) {
     self.postMessage({ type: 'status', status: `Loading voice: ${name}` })
     const voiceData = await fetchBufWithCache(`${HF_BASE}/embeddings_v2/${name}.safetensors`, `tts-voice-${name}`)
     voiceIndexMap[name] = model.add_voice(voiceData)
   }
 
-  self.postMessage({ type: 'voices_loaded', voices: VOICE_NAMES, defaultVoice: DEFAULT_VOICE })
+  // Load custom voices from pre-encoded safetensors
+  customVoiceIndexMap = {}
+  for (const name of CUSTOM_VOICE_NAMES) {
+    try {
+      self.postMessage({ type: 'status', status: `Loading custom voice: ${name}` })
+      const voiceData = await fetchBufWithCache(`./voices/${name}.safetensors`, `tts-voice-${name}`)
+      customVoiceIndexMap[name] = model.add_voice(voiceData)
+      allVoices.push(name)
+    } catch (e) {
+      self.postMessage({ type: 'status', status: `Custom voice ${name} not available` })
+      console.warn(`Failed to load custom voice ${name}:`, e)
+    }
+  }
+
+  self.postMessage({ type: 'voices_loaded', voices: allVoices, defaultVoice: DEFAULT_VOICE })
   self.postMessage({ type: 'loaded' })
 }
 
 async function handleGenerate(text, voiceName) {
-  const idx = voiceIndexMap[voiceName] ?? voiceIndexMap[DEFAULT_VOICE]
+  const idx = voiceIndexMap[voiceName] ?? customVoiceIndexMap[voiceName] ?? voiceIndexMap[DEFAULT_VOICE]
   const [processedText, framesAfterEos] = model.prepare_text(text)
   const tokenIds = tokenizer.encode(processedText)
   model.start_generation(idx, tokenIds, framesAfterEos, 0.8)
