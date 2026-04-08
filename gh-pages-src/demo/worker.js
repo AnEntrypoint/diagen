@@ -1,4 +1,4 @@
-import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=60'
+import { AutoModelForCausalLM, AutoProcessor, TextStreamer, env } from './transformers.min.js?v=61'
 
 const MODEL_BASE = './model'
 const CHUNKS = {
@@ -83,24 +83,12 @@ const DTYPE = 'q4f16'
 
 let model = null, processor = null
 let loading = false, loadError = null, activeDevice = 'wasm'
-// KV cache: { inputIds: BigInt64Array, pastKeyValues: object }
-let kvcache = null
 
 async function tryLoadModel(device, progress) {
   return AutoModelForCausalLM.from_pretrained(MODEL_ID, {
     dtype: DTYPE, device, progress_callback: progress,
     model_file_name: 'model_q4f16'
   })
-}
-
-function findCachePrefix(inputIds) {
-  if (!kvcache) return null
-  const cached = kvcache.inputIds
-  if (cached.length >= inputIds.length) return null
-  for (let i = 0; i < cached.length; i++) {
-    if (cached[i] !== inputIds[i]) return null
-  }
-  return kvcache
 }
 
 self.onmessage = async (e) => {
@@ -141,7 +129,6 @@ self.onmessage = async (e) => {
 
 
   if (type === 'reset') {
-    kvcache = null
     self.postMessage({ type: 'reset', id })
     return
   }
@@ -153,27 +140,14 @@ self.onmessage = async (e) => {
       const formatted = messages.map(m => ({ role: m.role, content: m.content }))
       const promptText = processor.apply_chat_template(formatted, { add_generation_prompt: config.addGenerationPrompt !== false, tokenize: false })
       const { input_ids, attention_mask } = await processor.tokenizer(promptText, { return_tensors: 'pt' })
-      const inputArr = Array.from(input_ids.data)
-      const hit = findCachePrefix(inputArr)
       const streamer = new TextStreamer(processor.tokenizer, {
         skip_prompt: true, skip_special_tokens: true,
         callback_function: (token) => { tokens.push(token); self.postMessage({ type: 'token', token, id }) },
       })
-      const genArgs = { max_new_tokens: config.maxNewTokens ?? 300, temperature: config.temperature ?? 0.7, repetition_penalty: config.repetitionPenalty ?? 1.0, do_sample: true, streamer, return_dict_in_generate: true }
-      let result
-      if (hit) {
-        const newIds = input_ids.slice(null, [hit.inputIds.length, null])
-        const newMask = attention_mask.slice(null, [hit.inputIds.length, null])
-        result = await model.generate({ input_ids: newIds, attention_mask: newMask, past_key_values: hit.pastKeyValues, ...genArgs })
-      } else {
-        result = await model.generate({ input_ids, attention_mask, ...genArgs })
-      }
-      if (result.past_key_values) {
-        kvcache = { inputIds: inputArr, pastKeyValues: result.past_key_values }
-      }
+      const genArgs = { max_new_tokens: config.maxNewTokens ?? 300, temperature: config.temperature ?? 0.7, repetition_penalty: config.repetitionPenalty ?? 1.0, do_sample: true, streamer }
+      const result = await model.generate({ input_ids, attention_mask, ...genArgs })
       self.postMessage({ type: 'result', text: tokens.join(''), id })
     } catch (err) {
-      kvcache = null
       self.postMessage({ type: 'error', message: err.message, id })
     }
     return
