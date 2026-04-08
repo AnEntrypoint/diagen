@@ -203,12 +203,12 @@ const PERSONA_QUESTIONS = [
   'What happens if I cause trouble here?'
 ]
 async function buildPersonaHistory(desc) {
-  const sys = `You are ${desc}. Stay in character as this specific person in this specific place. Respond naturally and briefly.`
+  const sys = `You are ${desc}. You live and work in a game world. Speak only as this character would — use their voice, their concerns, their place in the world. Use plain short sentences. Never give advice. Never be abstract. Never sound like an assistant. Say what this character would actually say.`
   const turns = []
   setVRMPaused(true)
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Shaping character… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
-    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, { role: 'user', content: q }], config: { maxNewTokens: 35, temperature: 0.75, repetitionPenalty: 1.1 } })
+    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, { role: 'user', content: q }], config: { maxNewTokens: 35, temperature: 0.8, repetitionPenalty: 1.3 } })
     const reply = text.trim().split('\n')[0].trim()
     turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
   }
