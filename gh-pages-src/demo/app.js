@@ -169,7 +169,7 @@ $('speak-btn').addEventListener('click', async () => {
   try {
     let messages, genConfig
     if (personaDesc) {
-      messages = [{ role: 'system', content: `You are ${personaDesc}. You are a character in a game world — not an AI, not an assistant. Speak only as this character. Never break character. Never say you are an AI.` }, ...personaHistory, ...history]; genConfig = { maxNewTokens: 120, temperature: 0.8 }
+      messages = [{ role: 'system', content: `You are ${personaDesc}. Stay in character as this specific person. Respond naturally and briefly.` }, ...personaHistory, ...history]; genConfig = { maxNewTokens: 120, temperature: 0.8 }
     } else {
       messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
@@ -194,22 +194,21 @@ $('sheet-mic-btn').addEventListener('click', async () => {
   $('status').textContent = prevStatus
 })
 const PERSONA_QUESTIONS = [
-  'who are you',
-  'what do you want from me',
-  'do you feel anything',
-  'are you dangerous',
-  'do you have a name',
-  'what do you fear',
-  'what happens next'
+  'Who are you and what do you do around here?',
+  'What are you working on right now?',
+  'How long have you been doing this?',
+  'What are you proud of?',
+  'What do you want?',
+  'What do you dislike?',
+  'What happens if I cause trouble here?'
 ]
 async function buildPersonaHistory(desc) {
-  const sys = `You are ${desc}. You are a character in a game world — not an AI, not an assistant. Speak only as this character. Never break character. Never say you are an AI.`
-  const { text: intro } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, { role: 'user', content: 'Introduce yourself in one sentence.' }], config: { maxNewTokens: 40, temperature: 0.7 } })
-  const turns = [{ role: 'user', content: 'Introduce yourself in one sentence.' }, { role: 'assistant', content: intro.trim().split('\n')[0].trim() }]
+  const sys = `You are ${desc}. Stay in character as this specific person in this specific place. Respond naturally and briefly.`
+  const turns = []
   setVRMPaused(true)
   for (const q of PERSONA_QUESTIONS) {
-    $('persona-btn').textContent = `Shaping character… (${turns.length / 2}/${PERSONA_QUESTIONS.length})`
-    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, { role: 'user', content: q }], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
+    $('persona-btn').textContent = `Shaping character… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
+    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, { role: 'user', content: q }], config: { maxNewTokens: 35, temperature: 0.75, repetitionPenalty: 1.1 } })
     const reply = text.trim().split('\n')[0].trim()
     turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
   }
