@@ -203,15 +203,15 @@ const PERSONA_QUESTIONS = [
   'what happens next'
 ]
 async function buildPersonaHistory(desc) {
-  const turns = []
   const sys = `You are ${desc}. You are a character in a game world — not an AI, not an assistant. Speak only as this character. Never break character. Never say you are an AI.`
-  const wrap = q => ({ role: 'user', content: q })
+  const { text: intro } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, { role: 'user', content: 'Introduce yourself in one sentence.' }], config: { maxNewTokens: 40, temperature: 0.7 } })
+  const turns = [{ role: 'user', content: 'Introduce yourself in one sentence.' }, { role: 'assistant', content: intro.trim().split('\n')[0].trim() }]
   setVRMPaused(true)
   for (const q of PERSONA_QUESTIONS) {
-    $('persona-btn').textContent = `Shaping character… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
-    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, wrap(q)], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
+    $('persona-btn').textContent = `Shaping character… (${turns.length / 2}/${PERSONA_QUESTIONS.length})`
+    const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: sys }, ...turns, { role: 'user', content: q }], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
     const reply = text.trim().split('\n')[0].trim()
-    turns.push(wrap(q), { role: 'assistant', content: reply || '...' })
+    turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
   }
   setVRMPaused(false)
   return turns
