@@ -233,6 +233,10 @@ class VRMViewer {
 let viewer = null
 let paused = false
 
+export function setVRMPaused(v) {
+  paused = v
+}
+
 export async function initVRM(canvas) {
   viewer = new VRMViewer(canvas)
   await viewer.load('./Cleetus.vrm')
