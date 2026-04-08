@@ -1,5 +1,5 @@
 import { initVRM, setMouthOpen } from './vrm-viewer.js'
-const worker = new Worker('./worker.js?v=58', { type: 'module' })
+const worker = new Worker('./worker.js?v=59', { type: 'module' })
 const ttsWorker = new Worker('./tts-worker.js', { type: 'module' })
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
 const synth = window.speechSynthesis
@@ -169,7 +169,7 @@ $('speak-btn').addEventListener('click', async () => {
     let messages, genConfig
     if (personaDesc) {
       const wrapMsg = m => m.role === 'user' ? { role: 'user', content: `User says: "${m.content}". Your reply as this character:` } : m
-      messages = [{ role: 'system', content: `You are: ${personaDesc}` }, ...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 40, temperature: 0.8 }
+      messages = [{ role: 'system', content: `You are: ${personaDesc}` }, ...personaHistory.map(wrapMsg), ...history.map(wrapMsg)]; genConfig = { maxNewTokens: 120, temperature: 0.8 }
     } else {
       messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
     }
@@ -206,7 +206,7 @@ async function buildPersonaHistory(desc) {
   for (const q of PERSONA_QUESTIONS) {
     $('persona-btn').textContent = `Building persona… (${turns.length / 2 + 1}/${PERSONA_QUESTIONS.length})`
     try {
-      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, ...turns.map(m => m.role === 'user' ? wrap(m.content) : m), wrap(q)], config: { maxNewTokens: 30, temperature: 0.8, repetitionPenalty: 1.15 } })
+      const { text } = await sendWorker({ type: 'generate', messages: [{ role: 'system', content: `You are: ${desc}` }, ...turns.map(m => m.role === 'user' ? wrap(m.content) : m), wrap(q)], config: { maxNewTokens: 80, temperature: 0.8, repetitionPenalty: 1.15 } })
       const reply = text.trim().split('\n')[0].trim()
       turns.push({ role: 'user', content: q }, { role: 'assistant', content: reply || '...' })
     } catch { turns.push({ role: 'user', content: q }, { role: 'assistant', content: '...' }) }
@@ -221,6 +221,7 @@ $('persona-btn').addEventListener('click', async () => {
   const desc = sheet.replace(/^(i am|i'm|name:|character:)\s*/i, '').trim()
   personaDesc = desc; history.length = 0
   personaHistory = await buildPersonaHistory(desc)
+  await sendWorker({ type: 'reset' })
   personaPrefill = null
   console.log('[Persona] Active:', desc, personaHistory)
   $('persona-btn').textContent = `Persona ready (${personaHistory.length / 2} turns)`
