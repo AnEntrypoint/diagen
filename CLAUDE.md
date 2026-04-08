@@ -28,6 +28,51 @@ To switch to Qwen2.5-0.5B abliterated (faster, roleplay-focused):
 - Workflow: downloads PyTorch weights → optimum-cli ONNX export → MatMulNBitsQuantizer q4f16 → splits into ≤99MB parts → commits model files + updates worker.js to main
 - `*.py` is in .gitignore — Python helpers are inlined as workflow heredocs, not separate files
 
+## TTS — Pocket TTS WASM with Voice Cloning
+
+The browser demo uses **Pocket TTS** (Kyutai Labs) compiled to WebAssembly for fast, on-device text-to-speech.
+
+### Built-in Voices
+7 pre-recorded voices from Kyutai: alba, marius, javert, fantine, cosette, eponine, azelma. Voice embeddings loaded from HuggingFace (`kyutai/pocket-tts-without-voice-cloning/embeddings_v2/`).
+
+### Custom Voice Cloning
+Custom voices (cleetus, vampire) are pre-encoded as KV cache states in `.safetensors` format:
+
+**Encoding pipeline:**
+1. `encode_voices.py` loads Pocket TTS model and audio files
+2. Resamples to 24kHz mono
+3. Runs mimi encoder → voice embeddings
+4. Runs voice conditioning → KV cache states
+5. Saves as `.safetensors` files
+
+**Browser loading:**
+```javascript
+// Built-in voices
+model.add_voice(fetchBufWithCache(`${HF_BASE}/embeddings_v2/${name}.safetensors`))
+
+// Custom voices (pre-encoded)
+model.add_voice(fetchBufWithCache(`./voices/${name}.safetensors`))
+```
+
+### GitHub Actions: `encode-voices.yml`
+Automatically triggers when WAV files in `gh-pages-src/demo/voices/` change. Installs PyTorch, encodes voices, commits `.safetensors` files. Can also run manually via `workflow_dispatch`.
+
+### Adding New Custom Voices
+1. Record WAV (10-30 sec, any sample rate)
+2. Place in `gh-pages-src/demo/voices/`
+3. Update `manifest.json` with filename
+4. Commit → workflow auto-encodes and pushes
+
+### KV Cache Format
+Each `.safetensors` contains pre-computed attention caches for 6 transformer layers:
+```
+transformer.layers.{i}.self_attn/cache
+  Shape: [2, 1, seq_len, num_heads, head_dim] (k and v caches)
+  Type: float32
+transformer.layers.{i}.self_attn/current_end
+  Shape: [1], position in cache
+```
+
 ## Browser Worker — ONNX Loading Pitfalls
 
 - **transformers.js filename construction**: with `dtype: 'q4f16'` (string) and `model_file_name: 'model_q4f16'`, transformers.js requests `model_q4f16_q4f16.onnx` (base + `_` + dtype). The fetch interceptor CHUNKS key must match this exact URL suffix.
