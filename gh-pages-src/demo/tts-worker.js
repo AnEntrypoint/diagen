@@ -5,6 +5,7 @@ const MODEL_URL = `${HF_BASE}/tts_b6369a24.safetensors`
 const TOKENIZER_URL = `${HF_BASE}/tokenizer.model`
 const VOICE_NAMES = ['alba', 'marius', 'javert', 'fantine', 'cosette', 'eponine', 'azelma']
 const DEFAULT_VOICE = 'alba'
+const CACHE_NAME = 'tts-wasm-cache'
 
 const wasmModulePromise = WebAssembly.compileStreaming(fetch('./wasm_pocket_tts_bg.wasm'))
 
@@ -16,8 +17,7 @@ function decodeSentencepieceModel(buffer) {
     let result = 0, shift = 0
     while (pos < buffer.length) {
       const b = buffer[pos++]
-      result |= (b & 0x7f) << shift
-      shift += 7
+      result |= (b & 0x7f) << shift; shift += 7
       if ((b & 0x80) === 0) return result
     }
     return result
@@ -26,8 +26,7 @@ function decodeSentencepieceModel(buffer) {
     let result = 0, shift = 0
     while (p < buf.length) {
       const b = buf[p++]
-      result |= (b & 0x7f) << shift
-      shift += 7
+      result |= (b & 0x7f) << shift; shift += 7
       if ((b & 0x80) === 0) return { val: result, pos: p }
     }
     return { val: result, pos: p }
@@ -41,11 +40,9 @@ function decodeSentencepieceModel(buffer) {
       if (fieldNum === 1 && wireType === 2) {
         const len = readVarFrom(data, pPos); pPos = len.pos
         piece = new TextDecoder().decode(data.slice(pPos, pPos + len.val)); pPos += len.val
-      } else if (fieldNum === 2 && wireType === 5) {
-        score = pView.getFloat32(pPos, true); pPos += 4
-      } else if (fieldNum === 3 && wireType === 0) {
-        const v = readVarFrom(data, pPos); type = v.val; pPos = v.pos
-      } else {
+      } else if (fieldNum === 2 && wireType === 5) { score = pView.getFloat32(pPos, true); pPos += 4 }
+      else if (fieldNum === 3 && wireType === 0) { const v = readVarFrom(data, pPos); type = v.val; pPos = v.pos }
+      else {
         if (wireType === 0) { const v = readVarFrom(data, pPos); pPos = v.pos }
         else if (wireType === 1) pPos += 8
         else if (wireType === 2) { const len = readVarFrom(data, pPos); pPos = len.pos + len.val }
@@ -103,26 +100,47 @@ class UnigramTokenizer {
   }
 }
 
-async function fetchBuf(url, label) {
-  self.postMessage({ type: 'status', status: `Loading ${label}…` })
-  const resp = await fetch(url)
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`)
-  const buf = await resp.arrayBuffer()
-  return new Uint8Array(buf)
+async function fetchBufWithCache(url, cacheKey) {
+  try {
+    const cache = await caches.open(CACHE_NAME)
+    const cached = await cache.match(cacheKey)
+    if (cached) {
+      const buf = await cached.arrayBuffer()
+      return new Uint8Array(buf)
+    }
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const buf = await resp.arrayBuffer()
+    const cached_resp = new Response(buf, { headers: { 'Content-Type': 'application/octet-stream' } })
+    await cache.put(cacheKey, cached_resp)
+    return new Uint8Array(buf)
+  } catch (e) {
+    self.postMessage({ type: 'error', error: 'Failed to fetch ' + cacheKey + ': ' + e.message })
+    throw e
+  }
 }
 
 async function handleLoad() {
+  self.postMessage({ type: 'status', status: 'Initializing WASM...' })
   const wasmModule = await wasmModulePromise
   await init(wasmModule)
-  const tokData = await fetchBuf(TOKENIZER_URL, 'tokenizer')
+
+  self.postMessage({ type: 'status', status: 'Loading tokenizer (may download ~60KB)...' })
+  const tokData = await fetchBufWithCache(TOKENIZER_URL, 'tts-tokenizer')
   tokenizer = new UnigramTokenizer(decodeSentencepieceModel(tokData))
-  const modelWeights = await fetchBuf(MODEL_URL, 'model weights')
+
+  self.postMessage({ type: 'status', status: 'Loading model (may download ~200MB, first time only)...' })
+  const modelWeights = await fetchBufWithCache(MODEL_URL, 'tts-model')
   model = new Model(modelWeights)
+
+  self.postMessage({ type: 'status', status: 'Loading voices...' })
   voiceIndexMap = {}
   for (const name of VOICE_NAMES) {
-    const voiceData = await fetchBuf(`${HF_BASE}/embeddings_v2/${name}.safetensors`, `voice: ${name}`)
+    self.postMessage({ type: 'status', status: `Loading voice: ${name}` })
+    const voiceData = await fetchBufWithCache(`${HF_BASE}/embeddings_v2/${name}.safetensors`, `tts-voice-${name}`)
     voiceIndexMap[name] = model.add_voice(voiceData)
   }
+
   self.postMessage({ type: 'voices_loaded', voices: VOICE_NAMES, defaultVoice: DEFAULT_VOICE })
   self.postMessage({ type: 'loaded' })
 }
