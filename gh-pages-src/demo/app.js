@@ -98,6 +98,7 @@ ttsWorker.onmessage = (e) => {
       sel.appendChild(opt)
     }
     $('voice-wrap').hidden = e.data.voices.length <= 1
+    ttsWorker.postMessage({ type: 'load_voice', voice: e.data.defaultVoice })
   } else if (type === 'loaded') {
     ttsReady = true; ttsLoading = false
     if (modelReady) $('progress-wrap').hidden = true
@@ -229,6 +230,7 @@ $('persona-btn').addEventListener('click', async () => {
   $('persona-btn').textContent = `Character locked (${personaHistory.length / 2} turns)`
   $('persona-btn').disabled = false
 })
+$('voice-select').addEventListener('change', () => { ttsWorker.postMessage({ type: 'load_voice', voice: $('voice-select').value }) })
 loadModel()
 initVRM($('vrm-canvas')).catch(err => { console.warn('[VRM] Failed to load:', err.message); $('vrm-canvas').style.display = 'none' })
 window.__app = { sendWorker, getPersonaHistory: () => personaHistory, setPersonaHistory: (h) => { personaHistory = h }, getPersonaPrefill: () => personaPrefill, setPersonaPrefill: (p) => { personaPrefill = p }, getPersonaDesc: () => personaDesc, getHistory: () => history, clearHistory: () => { history.length = 0 }, isModelReady: () => modelReady, isTtsReady: () => ttsReady, speak }
