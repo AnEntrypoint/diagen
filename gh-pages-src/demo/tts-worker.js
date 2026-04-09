@@ -160,10 +160,13 @@ async function handleGenerate(text, voiceName) {
   const [processedText, framesAfterEos] = model.prepare_text(text)
   const tokenIds = tokenizer.encode(processedText)
   model.start_generation(idx, tokenIds, framesAfterEos, 0.8)
+  const deadline = performance.now() + tokenIds.length * 120
+  let fired = false
   while (true) {
     const chunk = model.generation_step()
     if (!chunk) break
     self.postMessage({ type: 'audio_chunk', data: chunk.buffer }, [chunk.buffer])
+    if (!fired && performance.now() >= deadline) { fired = true; await new Promise(r => setTimeout(r, 0)) }
   }
   self.postMessage({ type: 'stream_ended' })
 }
