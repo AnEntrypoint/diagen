@@ -9,6 +9,7 @@ const { qwenDir } = require('sttttsmodels')
 
 const MODEL_DIR = qwenDir
 const EOS_IDS = new Set([248046, 248044])
+const MAX_SEQ = 512
 
 let embedSess = null, decoderSess = null, tok = null, loadP = null
 let FULL_ATTN = null, NUM_LAYERS = null, NUM_KV_HEADS = null, HEAD_DIM = null
@@ -66,15 +67,20 @@ export async function generateDialog(prompt, { maxNewTokens = 200, system = 'You
   const ids = tok.tokenize(`<|im_start|>system\n${system}<|im_end|>\n<|im_start|>user\n${prompt}<|im_end|>\n<|im_start|>assistant\n`)
   const state = initState()
   let seqLen = ids.length
+  const maskBuf = new BigInt64Array(MAX_SEQ).fill(1n)
 
   const { inputs_embeds } = await embedSess.run({
     input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, seqLen])
   })
   const posSeq = BigInt64Array.from(ids.map((_, i) => BigInt(i)))
+  const posIds = new BigInt64Array(seqLen * 3)
+  posIds.set(posSeq, 0)
+  posIds.set(posSeq, seqLen)
+  posIds.set(posSeq, seqLen * 2)
   let feeds = {
     inputs_embeds,
-    attention_mask: new ort.Tensor('int64', BigInt64Array.from(ids.map(() => 1n)), [1, seqLen]),
-    position_ids: new ort.Tensor('int64', [...posSeq, ...posSeq, ...posSeq], [3, 1, seqLen]),
+    attention_mask: new ort.Tensor('int64', maskBuf.subarray(0, seqLen), [1, seqLen]),
+    position_ids: new ort.Tensor('int64', posIds, [3, 1, seqLen]),
     ...state,
   }
 
@@ -96,7 +102,7 @@ export async function generateDialog(prompt, { maxNewTokens = 200, system = 'You
     })
     feeds = {
       inputs_embeds: nextEmbed,
-      attention_mask: new ort.Tensor('int64', BigInt64Array.from(new Array(seqLen).fill(1n)), [1, seqLen]),
+      attention_mask: new ort.Tensor('int64', maskBuf.subarray(0, seqLen), [1, seqLen]),
       position_ids: new ort.Tensor('int64', [pos, pos, pos], [3, 1, 1]),
       ...state,
     }
