@@ -6,7 +6,7 @@ const TOKENIZER_URL = `${HF_BASE}/tokenizer.model`
 const VOICE_NAMES = ['alba', 'marius', 'javert', 'fantine', 'cosette', 'eponine', 'azelma']
 const CUSTOM_VOICE_NAMES = ['cleetus', 'vampire']
 const DEFAULT_VOICE = 'alba'
-const CACHE_NAME = 'tts-wasm-cache-v2'
+const CACHE_NAME = 'tts-wasm-cache-v3'
 
 const wasmModulePromise = WebAssembly.compileStreaming(fetch('./wasm_pocket_tts_bg.wasm'))
 
