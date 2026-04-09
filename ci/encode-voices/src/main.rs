@@ -81,18 +81,17 @@ fn encode_voice(
             if end == 0 {
                 return Err(xn::Error::msg(format!("layer {i} current_end=0 after prompt_audio")));
             }
-            let k = mha.k_cache.narrow(1, 0..end)?.contiguous()?;
-            let v = mha.v_cache.narrow(1, 0..end)?.contiguous()?;
-            let (b, seq_len, h, d) = k.dims4()?;
-            let k5 = k.reshape((1usize, b, seq_len, h, d))?;
-            let v5 = v.reshape((1usize, b, seq_len, h, d))?;
+            let k = mha.k_cache.contiguous()?;
+            let v = mha.v_cache.contiguous()?;
+            let (b, full_seq, h, d) = k.dims4()?;
+            let k5 = k.reshape((1usize, b, full_seq, h, d))?;
+            let v5 = v.reshape((1usize, b, full_seq, h, d))?;
             let cache = xn::Tensor::cat(&[&k5, &v5], 0)?;
             tensors.insert(
                 format!("transformer.layers.{i}.self_attn/cache"),
                 TypedTensor::F32(cache),
             );
-            let end_data = vec![0f32; seq_len];
-            let end_tensor = xn::Tensor::from_vec(end_data, (seq_len,), &CPU)?;
+            let end_tensor = xn::Tensor::from_vec(vec![end as f32], (1usize,), &CPU)?;
             tensors.insert(
                 format!("transformer.layers.{i}.self_attn/current_end"),
                 TypedTensor::F32(end_tensor),
