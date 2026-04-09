@@ -38,12 +38,12 @@ The browser demo uses **Pocket TTS** (Kyutai Labs) compiled to WebAssembly for f
 ### Custom Voice Cloning
 Custom voices (cleetus, vampire) are pre-encoded as KV cache states in `.safetensors` format:
 
-**Encoding pipeline:**
-1. `encode_voices.py` loads Pocket TTS model and audio files
-2. Resamples to 24kHz mono
+**Encoding pipeline (`ci/encode-voices/src/main.rs`):**
+1. Downloads `kyutai/pocket-tts` model weights via HuggingFace hub
+2. Reads WAV files, resamples to 24kHz mono (up to 10s)
 3. Runs mimi encoder → voice embeddings
-4. Runs voice conditioning → KV cache states
-5. Saves as `.safetensors` files
+4. Runs `prompt_audio` → fills transformer KV caches
+5. Saves 6 layers of k+v caches as `.safetensors`
 
 **Browser loading:**
 ```javascript
@@ -55,7 +55,7 @@ model.add_voice(fetchBufWithCache(`./voices/${name}.safetensors`))
 ```
 
 ### GitHub Actions: `encode-voices.yml`
-Automatically triggers when WAV files in `gh-pages-src/demo/voices/` change. Installs PyTorch, encodes voices, commits `.safetensors` files. Can also run manually via `workflow_dispatch`.
+Triggers when WAV files in `gh-pages-src/demo/voices/` change. Clones `LaurentMazare/xn`, builds `ci/encode-voices` Rust binary, runs it, commits `.safetensors`. Can also run manually via `workflow_dispatch`.
 
 ### Adding New Custom Voices
 1. Record WAV (10-30 sec, any sample rate)
