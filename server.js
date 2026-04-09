@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
-import { loadQwenModel, generateDialog } from './qwen-dialog.mjs'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
 import os from 'os'
 
@@ -46,6 +45,9 @@ const TTS_MODELS_DIR = path.join(__dirname, 'models', 'tts')
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')))
 app.get('/client.js', (req, res) => res.sendFile(path.join(__dirname, 'client.js')))
 app.get('/animation-core.mjs', (req, res) => res.sendFile(path.join(__dirname, 'animation-core.mjs')))
+app.get('/idle-animator.mjs', (req, res) => res.sendFile(path.join(__dirname, 'idle-animator.mjs')))
+app.get('/facial-player.mjs', (req, res) => res.sendFile(path.join(__dirname, 'facial-player.mjs')))
+app.get('/llm-worker.js', (req, res) => res.sendFile(path.join(__dirname, 'llm-worker.js')))
 app.get('/Cleetus.vrm', (req, res) => res.sendFile(path.join(__dirname, 'Cleetus.vrm')))
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')))
 const DEMO_DIR = path.join(__dirname, 'gh-pages-src', 'demo')
@@ -166,17 +168,6 @@ app.post('/api/generate', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
-app.post('/dialog', async (req, res) => {
-  try {
-    const { prompt } = req.body
-    if (!prompt) return res.status(400).json({ error: 'prompt required' })
-    const text = await generateDialog(prompt)
-    res.json({ text })
-  } catch (err) {
-    console.error('[dialog] error:', err)
-    res.status(500).json({ error: err.message })
-  }
-})
 async function ensureModels() {
   const { downloadModels } = await import('./download-models.js')
   await downloadModels()
@@ -185,7 +176,6 @@ async function start() {
   await ensureModels()
   await loadA2F()
   await loadVoiceEmbedding()
-  await loadQwenModel()
   app.listen(port, '0.0.0.0', () => {
     console.log(`diagen server running on http://localhost:${port}`)
   })
