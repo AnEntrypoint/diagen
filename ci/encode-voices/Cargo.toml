@@ -1,0 +1,11 @@
+[package]
+name = "encode-voices"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xn = { workspace = true }
+ptts = { workspace = true }
+hf-hub = { workspace = true }
+safetensors = { workspace = true }
+hound = "3"
