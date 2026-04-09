@@ -4,7 +4,13 @@ import numpy as np
 from pathlib import Path
 from safetensors.torch import save_file
 import sphn
-import pocket_tts
+from pocket_tts.models.tts_model import TTSModel
+from pocket_tts import default_parameters
+
+
+def load_model():
+    params = default_parameters()
+    return TTSModel(params)
 
 
 def encode_voice(model, wav_path):
@@ -41,8 +47,8 @@ def main():
         return
 
     print("Loading model...")
-    model = pocket_tts.load_model()
-    print(f"Model loaded: {type(model)}")
+    model = load_model()
+    print(f"Model loaded: {type(model)}, attrs: {[a for a in dir(model) if not a.startswith('_')]}")
 
     for wav_path in wav_files:
         name = wav_path.stem
