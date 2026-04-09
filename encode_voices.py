@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
-import sys
 import torch
 import numpy as np
 from pathlib import Path
 from safetensors.torch import save_file
 
-try:
-    import sphn
-except ImportError:
-    print("ERROR: pip install sphn")
-    sys.exit(1)
-
-try:
-    import ptts
-except ImportError:
-    print("ERROR: pip install git+https://github.com/kyutai-labs/pocket-tts.git")
-    sys.exit(1)
+import sphn
+import ptts
 
 
 def extract_kv_caches(state):
