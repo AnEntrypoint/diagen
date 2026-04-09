@@ -1,81 +1,74 @@
 #!/usr/bin/env python3
-"""
-Encode custom voices for pocket-tts WASM by generating KV cache states.
-
-Since the Pocket TTS Python API doesn't expose voice encoding directly,
-we create initialized KV cache states. The browser WASM will use these
-as voice embeddings for conditioning speech generation.
-"""
-
+import sys
 import torch
+import numpy as np
 from pathlib import Path
 from safetensors.torch import save_file
 
+try:
+    import sphn
+except ImportError:
+    print("ERROR: pip install sphn")
+    sys.exit(1)
 
-def create_voice_state():
-    """
-    Create a minimal KV cache state for a custom voice.
+try:
+    import ptts
+except ImportError:
+    print("ERROR: pip install git+https://github.com/kyutai-labs/pocket-tts.git")
+    sys.exit(1)
 
-    Pocket TTS uses pre-computed attention caches as voice embeddings.
-    Each cache state contains transformer layer KV caches.
-    """
-    state_dict = {}
 
-    # Standard Pocket TTS config
+def extract_kv_caches(state):
     num_layers = 6
-    seq_len = 512
-    num_heads = 16
-    head_dim = 64
+    tensors = {}
+    transformer_state = state._tts_state.flow_lm_state.transformer_state
+    for i, layer_state in enumerate(transformer_state.layer_states[:num_layers]):
+        mha = layer_state
+        k = torch.from_numpy(np.array(mha.k_cache.to_cpu().numpy())).float()
+        v = torch.from_numpy(np.array(mha.v_cache.to_cpu().numpy())).float()
+        current_end = int(mha.current_end)
+        cache = torch.stack([k, v], dim=0)
+        if cache.dim() == 4:
+            cache = cache.unsqueeze(1)
+        tensors[f"transformer.layers.{i}.self_attn/cache"] = cache
+        tensors[f"transformer.layers.{i}.self_attn/current_end"] = torch.tensor(float(current_end))
+    return tensors
 
-    for i in range(num_layers):
-        # Create cache tensors: [2, batch=1, seq_len, num_heads, head_dim]
-        # [0] = K cache, [1] = V cache
-        cache = torch.zeros(
-            (2, 1, seq_len, num_heads, head_dim),
-            dtype=torch.float32
-        )
-        state_dict[f"transformer.layers.{i}.self_attn/cache"] = cache
 
-        # Position in cache (how much is filled)
-        state_dict[f"transformer.layers.{i}.self_attn/current_end"] = torch.tensor(0, dtype=torch.float32)
-
-    return state_dict
+def encode_voice(model, wav_path):
+    audio, _ = sphn.read(str(wav_path), sample_rate=24000)
+    audio = audio[0, :24000 * 10]
+    state = model.get_state_for_audio(audio)
+    return extract_kv_caches(state)
 
 
 def main():
-    voices_dir = Path('gh-pages-src/demo/voices')
-    voices_dir.mkdir(parents=True, exist_ok=True)
-
-    # Get list of voice WAV files
-    wav_files = sorted(voices_dir.glob('*.wav'))
-
+    voices_dir = Path("gh-pages-src/demo/voices")
+    wav_files = sorted(voices_dir.glob("*.wav"))
     if not wav_files:
-        print('No WAV files found in gh-pages-src/demo/voices/')
+        print("No WAV files found in gh-pages-src/demo/voices/")
         return
 
-    print(f'Found {len(wav_files)} voice(s) to encode')
+    print("Loading model...")
+    model = ptts.load_model()
+    print(f"Model loaded, voices={model.voices()}")
 
-    for wav_file in wav_files:
-        voice_name = wav_file.stem
-        output_path = voices_dir / f'{voice_name}.safetensors'
-
-        print(f'Encoding {voice_name}...')
-
+    for wav_path in wav_files:
+        name = wav_path.stem
+        out = voices_dir / f"{name}.safetensors"
+        print(f"Encoding {name}...")
         try:
-            # Create KV cache state for this voice
-            state_dict = create_voice_state()
-
-            # Save as safetensors
-            save_file(state_dict, str(output_path))
-            print(f'  ✓ Saved {output_path.name} ({output_path.stat().st_size / 1024:.1f} KB)')
-
+            tensors = encode_voice(model, wav_path)
+            save_file(tensors, str(out))
+            size_kb = out.stat().st_size / 1024
+            print(f"  saved {out.name} ({size_kb:.1f} KB)")
         except Exception as e:
-            print(f'  ✗ Error encoding {voice_name}: {e}')
             import traceback
+            print(f"  ERROR: {e}")
             traceback.print_exc()
 
-    print('\nDone!')
+    print("Done!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

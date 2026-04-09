@@ -46,6 +46,7 @@ ttsWorker.onmessage = (e) => {
 		ttsWorker.postMessage({ type: 'load_voice', voice: e.data.defaultVoice })
 	} else if (type === 'loaded') {
 		ttsReady = true; ttsLoading = false
+		$('progress-wrap').hidden = true
 		ttsReadyResolvers.forEach(r => r(true)); ttsReadyResolvers = []
 	} else if (type === 'status' && ttsLoading && !ttsReady) {
 		$('progress-wrap').hidden = false; $('progress-text').textContent = e.data.status
