@@ -1,6 +1,6 @@
 import { CreateMLCEngine } from './web-llm.js'
 
-const MODEL = 'Llama-3.2-1B-Instruct-q4f16_1-MLC'
+const MODEL = 'Qwen3-0.6B-q4f16_1-MLC'
 let engine = null, loading = false, loadError = null
 
 self.onmessage = async (e) => {
