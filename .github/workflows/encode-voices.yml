@@ -40,6 +40,9 @@ jobs:
 
       - name: Encode voices
         working-directory: ${{ github.workspace }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
         run: /tmp/xn/target/release/encode-voices
 
       - name: List generated files
