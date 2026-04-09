@@ -53,6 +53,7 @@ export class Audio2FaceCore {
     this._audioKey = null;
     this._hasEmotion = false;
     this._audioBuf = null;
+    this._audioTensor = null;
     this._emotionTensor = null;
     this._solveData = null;
     if (config) this.loadConfig(config);
@@ -111,16 +112,15 @@ export class Audio2FaceCore {
     }
 
     const os = await import('os');
-    const numThreads = options.threads || Math.max(1, Math.floor(os.cpus().length / 2));
-    const providers = options.useGPU ? ['cuda', 'cpu'] : ['cpu'];
+    const numThreads = options.threads || os.cpus().length;
     const sessionOpts = {
-      executionProviders: providers,
+      executionProviders: ['dml', 'cpu'],
       graphOptimizationLevel: 'all',
       enableCpuMemArena: true,
       enableMemPattern: true,
-      executionMode: 'sequential',
+      executionMode: 'parallel',
       intraOpNumThreads: numThreads,
-      interOpNumThreads: 1,
+      interOpNumThreads: Math.max(2, Math.floor(numThreads / 4)),
     };
 
     try {
@@ -221,6 +221,7 @@ export class Audio2FaceCore {
     this._audioKey = names.includes('audio') ? 'audio' : names.includes('input') ? 'input' : names[0];
     this._hasEmotion = names.includes('emotion');
     this._audioBuf = new Float32Array(this.bufferLen);
+    this._audioTensor = new this.ort.Tensor('float32', this._audioBuf, [1, 1, this.bufferLen]);
     if (this._hasEmotion)
       this._emotionTensor = new this.ort.Tensor('float32', new Float32Array(26), [1, 1, 26]);
   }
@@ -231,7 +232,7 @@ export class Audio2FaceCore {
     const feeds = {};
     if (audioChunk.length === this._audioBuf.length) {
       this._audioBuf.set(audioChunk);
-      feeds[this._audioKey] = new this.ort.Tensor('float32', this._audioBuf, [1, 1, this._audioBuf.length]);
+      feeds[this._audioKey] = this._audioTensor;
     } else {
       feeds[this._audioKey] = new this.ort.Tensor('float32', audioChunk, [1, 1, audioChunk.length]);
     }
@@ -381,6 +382,7 @@ export class Audio2FaceCore {
     this._audioKey = null;
     this._hasEmotion = false;
     this._audioBuf = null;
+    this._audioTensor = null;
     this._emotionTensor = null;
     this._solveData = null;
   }

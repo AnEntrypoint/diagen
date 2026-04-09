@@ -26,7 +26,9 @@ export async function loadQwenModel() {
     const layerTypes = tc.layer_types
     FULL_ATTN = new Set(layerTypes.map((t, i) => t === 'full_attention' ? i : -1).filter(i => i >= 0))
     tok = buildTokenizer(JSON.parse(fs.readFileSync(path.join(MODEL_DIR, 'tokenizer.json'), 'utf8')))
-    const opts = { executionProviders: ['cpu'], graphOptimizationLevel: 'all' }
+    const os = await import('os')
+    const cpus = os.cpus().length
+    const opts = { executionProviders: ['dml', 'cpu'], graphOptimizationLevel: 'all', intraOpNumThreads: cpus, interOpNumThreads: Math.max(2, Math.floor(cpus / 4)), executionMode: 'parallel' }
     console.log('[qwen] loading embed_tokens...')
     embedSess = await ort.InferenceSession.create(path.join(MODEL_DIR, 'onnx/embed_tokens_q4.onnx'), opts)
     console.log('[qwen] loading decoder...')
