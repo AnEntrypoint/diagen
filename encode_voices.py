@@ -4,38 +4,42 @@ import numpy as np
 from pathlib import Path
 from safetensors.torch import save_file
 import sphn
-from pocket_tts.models.tts_model import TTSModel
-from pocket_tts import default_parameters
+from pocket_tts.models.tts_model import TTSModel, RECOMMENDED_CONFIG, init_states, get_flow_lm_state_dict
+from pocket_tts import export_model_state
 
 
 def load_model():
-    params = default_parameters()
-    return TTSModel(params)
+    model = TTSModel(RECOMMENDED_CONFIG)
+    model.load()
+    return model
 
 
 def encode_voice(model, wav_path):
     audio, _ = sphn.read(str(wav_path), sample_rate=24000)
     audio = audio[0, :24000 * 10]
-    state = model.get_state_for_audio(audio)
-    return extract_kv_caches(state)
+    states = init_states(model, audio=audio)
+    return states_to_tensors(states)
 
 
-def extract_kv_caches(state):
-    num_layers = 6
+def states_to_tensors(states):
+    state_dict = get_flow_lm_state_dict(states)
     tensors = {}
-    inner = state._tts_state if hasattr(state, '_tts_state') else state
-    transformer_state = inner.flow_lm_state.transformer_state
-    for i, layer_state in enumerate(transformer_state.layer_states[:num_layers]):
-        k_raw = np.array(layer_state.k_cache.to_cpu().numpy())
-        v_raw = np.array(layer_state.v_cache.to_cpu().numpy())
-        k = torch.from_numpy(k_raw).float()
-        v = torch.from_numpy(v_raw).float()
-        current_end = int(layer_state.current_end)
+    num_layers = 6
+    for i in range(num_layers):
+        k_key = f"transformer.layers.{i}.self_attn.k_cache"
+        v_key = f"transformer.layers.{i}.self_attn.v_cache"
+        end_key = f"transformer.layers.{i}.self_attn.current_end"
+        k = state_dict.get(k_key)
+        v = state_dict.get(v_key)
+        end = state_dict.get(end_key, torch.tensor(0.0))
+        if k is None or v is None:
+            print(f"  WARNING: missing keys for layer {i}, available: {list(state_dict.keys())[:10]}")
+            raise KeyError(f"Missing k/v cache for layer {i}")
         cache = torch.stack([k, v], dim=0)
         if cache.dim() == 4:
             cache = cache.unsqueeze(1)
-        tensors[f"transformer.layers.{i}.self_attn/cache"] = cache
-        tensors[f"transformer.layers.{i}.self_attn/current_end"] = torch.tensor(float(current_end))
+        tensors[f"transformer.layers.{i}.self_attn/cache"] = cache.float()
+        tensors[f"transformer.layers.{i}.self_attn/current_end"] = end.float().reshape(())
     return tensors
 
 
@@ -48,7 +52,7 @@ def main():
 
     print("Loading model...")
     model = load_model()
-    print(f"Model loaded: {type(model)}, attrs: {[a for a in dir(model) if not a.startswith('_')]}")
+    print(f"Model loaded: {type(model)}")
 
     for wav_path in wav_files:
         name = wav_path.stem
