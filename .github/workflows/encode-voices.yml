@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install torch torchaudio safetensors
+          pip install torch torchaudio safetensors sphn
           pip install git+https://github.com/kyutai-labs/pocket-tts.git
 
       - name: Encode voices
