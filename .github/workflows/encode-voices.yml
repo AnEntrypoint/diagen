@@ -28,6 +28,7 @@ jobs:
 
       - name: Clone xn-repo
         run: |
+          rm -rf /tmp/xn
           git clone --depth 1 https://github.com/LaurentMazare/xn.git /tmp/xn
           mkdir -p /tmp/xn/encode-voices/src
           cp ${{ github.workspace }}/ci/encode-voices/Cargo.toml /tmp/xn/encode-voices/Cargo.toml
