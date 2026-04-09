@@ -34,7 +34,13 @@ jobs:
           pip install git+https://github.com/kyutai-labs/pocket-tts.git
 
       - name: Inspect pocket-tts package
-        run: python -c "import pocket_tts; print(dir(pocket_tts))" 2>&1 || python -c "import pip; print('pocket_tts not found')"
+        run: |
+          python -c "
+          import pocket_tts
+          print('TOP:', dir(pocket_tts))
+          print('models:', dir(pocket_tts.models))
+          from pocket_tts.models import tts_model; print('tts_model:', dir(tts_model))
+          "
 
       - name: Encode voices
         run: python encode_voices.py
