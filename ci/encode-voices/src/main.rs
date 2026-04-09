@@ -102,7 +102,7 @@ fn main() {
     use hf_hub::{Repo, RepoType, api::sync::Api};
     println!("Downloading model...");
     let api = Api::new().expect("hf api");
-    let repo = api.repo(Repo::new("kyutai/pocket-tts".to_string(), RepoType::Model));
+    let repo = api.repo(Repo::new("kyutai/pocket-tts-without-voice-cloning".to_string(), RepoType::Model));
     let model_path = repo.get("tts_b6369a24.safetensors").expect("download model");
     println!("Model at {:?}", model_path);
 
