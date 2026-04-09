@@ -6,6 +6,11 @@ export function buildTokenizer(tokJson) {
   const addedMap = Object.fromEntries(added_tokens.map(at => [at.content, at.id]))
   const addedList = added_tokens.map(at => at.content).sort((a, b) => b.length - a.length)
   const merges = model.merges.map(m => Array.isArray(m) ? m : m.split(' '))
+  const mergeRanks = new Map()
+  for (let i = 0; i < merges.length; i++) {
+    const key = merges[i][0] + ' ' + merges[i][1]
+    if (!mergeRanks.has(key)) mergeRanks.set(key, i)
+  }
   const byteEnc = {}
   let n = 0
   for (let b = 0; b < 256; b++) {
@@ -18,8 +23,8 @@ export function buildTokenizer(tokJson) {
     while (w.length > 1) {
       let best = -1, bestPair = null
       for (let i = 0; i < w.length - 1; i++) {
-        const idx = merges.findIndex(m => m[0] === w[i] && m[1] === w[i + 1])
-        if (idx >= 0 && (best < 0 || idx < best)) { best = idx; bestPair = i }
+        const rank = mergeRanks.get(w[i] + ' ' + w[i + 1])
+        if (rank !== undefined && (best < 0 || rank < best)) { best = rank; bestPair = i }
       }
       if (best < 0) break
       w.splice(bestPair, 2, w[bestPair] + w[bestPair + 1])

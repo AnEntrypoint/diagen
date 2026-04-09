@@ -14,27 +14,24 @@ const ARKIT_NAMES = [
 ]
 
 function encodeWAV(float32Data, sampleRate) {
-  const wavBuf = new ArrayBuffer(44 + float32Data.length * 2)
-  const view = new DataView(wavBuf)
-  const writeStr = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)) }
-  writeStr(0, 'RIFF')
-  view.setUint32(4, 36 + float32Data.length * 2, true)
-  writeStr(8, 'WAVE')
-  writeStr(12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * 2, true)
-  view.setUint16(32, 2, true)
-  view.setUint16(34, 16, true)
-  writeStr(36, 'data')
-  view.setUint32(40, float32Data.length * 2, true)
-  for (let i = 0; i < float32Data.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32Data[i]))
-    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true)
+  const numSamples = float32Data.length
+  const dataBytes = numSamples * 2
+  const buf = Buffer.alloc(44 + dataBytes)
+  buf.write('RIFF', 0, 'ascii')
+  buf.writeUInt32LE(36 + dataBytes, 4)
+  buf.write('WAVEfmt ', 8, 'ascii')
+  buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22)
+  buf.writeUInt32LE(sampleRate, 24); buf.writeUInt32LE(sampleRate * 2, 28)
+  buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34)
+  buf.write('data', 36, 'ascii')
+  buf.writeUInt32LE(dataBytes, 40)
+  const samples = new Int16Array(buf.buffer, buf.byteOffset + 44, numSamples)
+  for (let i = 0; i < numSamples; i++) {
+    const s = float32Data[i]
+    const clamped = s > 1 ? 1 : s < -1 ? -1 : s
+    samples[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF
   }
-  return Buffer.from(wavBuf)
+  return buf
 }
 
 function resampleAudio(float32Data, fromRate, toRate) {
@@ -52,7 +49,7 @@ function resampleAudio(float32Data, fromRate, toRate) {
 }
 
 function buildAfan(frames, fps = 30) {
-  const numBlendshapes = ARKIT_NAMES.length
+  const numBlendshapes = 52
   const numFrames = frames.length
   const totalSize = 12 + (numFrames * numBlendshapes)
   const buf = Buffer.alloc(totalSize)
@@ -63,9 +60,11 @@ function buildAfan(frames, fps = 30) {
   buf.writeUInt8(numBlendshapes, offset); offset += 1
   buf.writeUInt8(0, offset); offset += 1
   buf.writeUInt32LE(numFrames, offset); offset += 4
-  for (const frame of frames) {
+  for (let f = 0; f < numFrames; f++) {
+    const frame = frames[f]
     for (let i = 0; i < numBlendshapes; i++) {
-      buf[offset++] = Math.round(Math.max(0, Math.min(1, frame[ARKIT_NAMES[i]] || 0)) * 255)
+      const v = frame[i]
+      buf[offset++] = v <= 0 ? 0 : v >= 1 ? 255 : (v * 255 + 0.5) | 0
     }
   }
   return buf

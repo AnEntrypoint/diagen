@@ -47,7 +47,6 @@ app.use('/demo', express.static(DEMO_DIR))
 
 const SAMPLE_RATE = 24000
 const A2F_SAMPLE_RATE = 16000
-
 let a2f = null
 let voiceEmbedding = null
 
@@ -64,12 +63,10 @@ async function loadA2F() {
 
 async function loadVoiceEmbedding() {
   if (voiceEmbedding) return voiceEmbedding
-  
   if (!fs.existsSync(CLEETUS_WAV)) {
     console.warn('[voice] No voice file found at', CLEETUS_WAV)
     return null
   }
-
   console.log('[voice] Encoding voice from', CLEETUS_WAV)
   const wavBuffer = fs.readFileSync(CLEETUS_WAV)
   const view = new DataView(wavBuffer.buffer, wavBuffer.byteOffset, wavBuffer.byteLength)
@@ -87,39 +84,35 @@ async function loadVoiceEmbedding() {
   }
   await ttsOnnx.loadModels(TTS_MODELS_DIR)
   voiceEmbedding = await ttsOnnx.encodeVoiceAudio(resampledData)
-  
   console.log('[voice] Voice encoded, shape:', voiceEmbedding.shape)
   return voiceEmbedding
 }
-
 
 app.post('/api/generate', async (req, res) => {
   try {
     const { text } = req.body
     if (!text) return res.status(400).json({ error: 'text required' })
-    
+
     await loadA2F()
     const voiceEmb = await loadVoiceEmbedding()
-    
-    if (!voiceEmb) {
-      return res.status(500).json({ error: 'Voice embedding not available' })
-    }
-    
+    if (!voiceEmb) return res.status(500).json({ error: 'Voice embedding not available' })
+
     const startTime = performance.now()
-    
+
     const audioFloat = await ttsOnnx.synthesize(text, voiceEmb, TTS_MODELS_DIR)
-    const audioWav = encodeWAV(audioFloat, SAMPLE_RATE)
-    const audio16k = resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE)
-    
+    const [audioWav, audio16k] = await Promise.all([
+      Promise.resolve(encodeWAV(audioFloat, SAMPLE_RATE)),
+      Promise.resolve(resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE))
+    ])
+
     const fps = 30
     const stride = Math.round(A2F_SAMPLE_RATE / fps)
     const bufferLen = a2f.bufferLen
     const bufferOfs = a2f.bufferOfs
     const predictionDelay = a2f.faceParams?.prediction_delay || 0
-    
+
     const results = []
     let lastBs = null
-    
     for (let offset = 0; offset + bufferLen <= audio16k.length; offset += stride) {
       const chunk = audio16k.slice(offset, offset + bufferLen)
       const result = await a2f.runInference(chunk)
@@ -127,57 +120,44 @@ app.post('/api/generate', async (req, res) => {
         result.blendshapes = a2f.smoothBlendshapes(lastBs, result.blendshapes)
       }
       lastBs = result.blendshapes
-      const centerTime = (offset + bufferOfs) / A2F_SAMPLE_RATE + predictionDelay
       results.push({
-        time: centerTime,
+        time: (offset + bufferOfs) / A2F_SAMPLE_RATE + predictionDelay,
         blendshapes: result.blendshapes
       })
     }
-    
+
     const audioDuration = audioFloat.length / SAMPLE_RATE
     const targetNumFrames = Math.ceil(audioDuration * fps)
-    const frames = []
-    
+    const frames = new Array(targetNumFrames)
+    let cursor = 0
     for (let frameIdx = 0; frameIdx < targetNumFrames; frameIdx++) {
       const frameTime = frameIdx / fps
-      const frame = {}
-      
+      const frame = new Float32Array(52)
+
       if (results.length === 0 || frameTime < results[0].time) {
-        for (let k = 0; k < 52; k++) {
-          frame[ARKIT_NAMES[k]] = 0
-        }
-      } else {
-        let resultIdx = results.findIndex((r, i) => {
-          const next = results[i + 1]
-          if (!next) return true
-          return r.time <= frameTime && next.time > frameTime
-        })
-        
-        if (resultIdx === -1) resultIdx = results.length - 1
-        
-        const curr = results[resultIdx]
-        const next = results[Math.min(resultIdx + 1, results.length - 1)]
-        const t = next !== curr && next.time !== curr.time 
-          ? (frameTime - curr.time) / (next.time - curr.time) 
-          : 0
-        
-        for (let k = 0; k < 52; k++) {
-          const currVal = curr.blendshapes[k].value
-          const nextVal = next.blendshapes[k].value
-          frame[ARKIT_NAMES[k]] = currVal + (nextVal - currVal) * Math.max(0, Math.min(1, t))
-        }
+        frames[frameIdx] = frame
+        continue
       }
-      frames.push(frame)
+
+      while (cursor < results.length - 1 && results[cursor + 1].time <= frameTime) cursor++
+
+      const curr = results[cursor]
+      const next = results[Math.min(cursor + 1, results.length - 1)]
+      const dt = next.time - curr.time
+      const t = dt > 0 ? Math.max(0, Math.min(1, (frameTime - curr.time) / dt)) : 0
+
+      for (let k = 0; k < 52; k++) {
+        frame[k] = curr.blendshapes[k].value + (next.blendshapes[k].value - curr.blendshapes[k].value) * t
+      }
+      frames[frameIdx] = frame
     }
-    
+
     const animBuffer = buildAfan(frames, fps)
-    
     const duration = audioFloat.length / SAMPLE_RATE
     const genTime = ((performance.now() - startTime) / 1000).toFixed(1)
     const rtfx = (duration / parseFloat(genTime)).toFixed(1)
-    
+
     console.log(`[generate] "${text.slice(0, 30)}..." - ${duration.toFixed(1)}s in ${genTime}s (${rtfx}x realtime)`)
-    
     res.json({
       audio: audioWav.toString('base64'),
       animation: animBuffer.toString('base64'),
@@ -188,7 +168,6 @@ app.post('/api/generate', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
-
 app.post('/dialog', async (req, res) => {
   try {
     const { prompt } = req.body
@@ -200,7 +179,6 @@ app.post('/dialog', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
-
 async function ensureModels() {
   const { downloadModels } = await import('./download-models.js')
   await downloadModels()
@@ -211,12 +189,10 @@ async function start() {
   await loadA2F()
   await loadVoiceEmbedding()
   await loadQwenModel()
-  
   app.listen(port, '0.0.0.0', () => {
     console.log(`diagen server running on http://localhost:${port}`)
   })
 }
-
 start().catch(err => {
   console.error('Startup failed:', err)
   process.exit(1)

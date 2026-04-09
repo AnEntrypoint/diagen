@@ -162,14 +162,15 @@ export class Audio2FaceCore {
   reconstructVertices(pcaCoeffs) {
     if (!this._solveData) return null;
     const { pcaMean, pcaBasis } = this._solveData;
-    const numVerts = 61520;
+    const stride = 61520 * 3;
     const vertices = new Float32Array(pcaMean);
-    
-    for (let i = 0; i < Math.min(pcaCoeffs.length, this.skinSize); i++) {
+    const limit = Math.min(pcaCoeffs.length, this.skinSize);
+    for (let i = 0; i < limit; i++) {
       const c = pcaCoeffs[i];
-      const offset = i * numVerts * 3;
-      for (let j = 0; j < numVerts * 3; j++) {
-        vertices[j] += pcaBasis[offset + j] * c;
+      if (Math.abs(c) < 1e-6) continue;
+      const basis = pcaBasis.subarray(i * stride, (i + 1) * stride);
+      for (let j = 0; j < stride; j++) {
+        vertices[j] += basis[j] * c;
       }
     }
     return vertices;
@@ -177,28 +178,32 @@ export class Audio2FaceCore {
 
   solveBlendshapes(vertices) {
     if (!this._solveData || !this._solveData.D_pinv) return null;
-    
     const { D_pinv, neutral, frontalMask } = this._solveData;
     const numFrontal = frontalMask.length;
-    const numBs = 52;
-    
-    const target = new Float32Array(numFrontal * 3);
+    const targetLen = numFrontal * 3;
+    const target = new Float32Array(targetLen);
     for (let i = 0; i < numFrontal; i++) {
       const vi = frontalMask[i];
-      for (let c = 0; c < 3; c++) {
-        target[i * 3 + c] = vertices[vi * 3 + c] - neutral[vi * 3 + c];
-      }
+      const ti = i * 3, vj = vi * 3;
+      target[ti] = vertices[vj] - neutral[vj];
+      target[ti + 1] = vertices[vj + 1] - neutral[vj + 1];
+      target[ti + 2] = vertices[vj + 2] - neutral[vj + 2];
     }
-    
-    const weights = new Float32Array(numBs);
-    for (let b = 0; b < numBs; b++) {
-      let sum = 0;
-      for (let i = 0; i < numFrontal * 3; i++) {
-        sum += D_pinv[b * numFrontal * 3 + i] * target[i];
+    const weights = new Float32Array(52);
+    for (let b = 0; b < 52; b++) {
+      const row = D_pinv.subarray(b * targetLen, (b + 1) * targetLen);
+      let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+      const len4 = targetLen & ~3;
+      for (let i = 0; i < len4; i += 4) {
+        s0 += row[i] * target[i];
+        s1 += row[i + 1] * target[i + 1];
+        s2 += row[i + 2] * target[i + 2];
+        s3 += row[i + 3] * target[i + 3];
       }
-      weights[b] = clamp(sum);
+      let sum = s0 + s1 + s2 + s3;
+      for (let i = len4; i < targetLen; i++) sum += row[i] * target[i];
+      weights[b] = sum > 1 ? 1 : sum < 0 ? 0 : sum;
     }
-    
     return weights;
   }
 
