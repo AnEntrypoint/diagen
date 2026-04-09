@@ -91,6 +91,12 @@ fn encode_voice(
                 format!("transformer.layers.{i}.self_attn/cache"),
                 TypedTensor::F32(cache),
             );
+            let end_data = vec![0f32; seq_len];
+            let end_tensor = xn::Tensor::from_vec(end_data, (seq_len,), &CPU)?;
+            tensors.insert(
+                format!("transformer.layers.{i}.self_attn/current_end"),
+                TypedTensor::F32(end_tensor),
+            );
         }
     }
     xn::safetensors::save(&tensors, out_path)?;
