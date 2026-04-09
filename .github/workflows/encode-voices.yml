@@ -33,6 +33,9 @@ jobs:
           pip install torch torchaudio safetensors sphn
           pip install git+https://github.com/kyutai-labs/pocket-tts.git
 
+      - name: Inspect pocket-tts package
+        run: python -c "import pocket_tts; print(dir(pocket_tts))" 2>&1 || python -c "import pip; print('pocket_tts not found')"
+
       - name: Encode voices
         run: python encode_voices.py
 
