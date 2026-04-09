@@ -91,9 +91,9 @@ $('speak-btn').addEventListener('click', async () => {
 	try {
 		let messages, genConfig
 		if (personaDesc) {
-			messages = [{ role: 'system', content: `You are ${personaDesc}. Stay in character as this specific person. Respond naturally and briefly.` }, ...personaHistory, ...history]; genConfig = { maxNewTokens: 120, temperature: 0.8 }
+			messages = [{ role: 'system', content: `You are ${personaDesc}. Stay in character. Give the shortest, funniest possible response. One sentence max. Be witty.` }, ...personaHistory, ...history]; genConfig = { maxNewTokens: 120, temperature: 0.9 }
 		} else {
-			messages = [{ role: 'system', content: 'Reply in 1-2 sentences. Be concise. No lists.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.7 }
+			messages = [{ role: 'system', content: 'Reply in one sentence. Be as short and funny as possible.' }, ...history]; genConfig = { maxNewTokens: 40, temperature: 0.9 }
 		}
 		const { text } = await sendWorker({ type: 'generate', messages, config: genConfig })
 		const cleaned = text.trim(); history.push({ role: 'assistant', content: cleaned })
