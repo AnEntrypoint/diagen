@@ -4,8 +4,8 @@ on:
   push:
     paths:
       - 'gh-pages-src/demo/voices/*.wav'
-      - 'encode_voices.py'
       - '.github/workflows/encode-voices.yml'
+      - 'ci/encode-voices/**'
   workflow_dispatch:
 
 jobs:
@@ -14,43 +14,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache pocket-tts dependencies
+      - name: Cache Rust build
         uses: actions/cache@v3
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-pocket-tts-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-pocket-tts-
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            /tmp/xn/target
+          key: ${{ runner.os }}-cargo-encode-voices-v4
 
-      - name: Install dependencies
+      - name: Clone xn-repo
         run: |
-          pip install --upgrade pip
-          pip install torch torchaudio safetensors sphn
-          pip install git+https://github.com/kyutai-labs/pocket-tts.git
+          git clone --depth 1 https://github.com/LaurentMazare/xn.git /tmp/xn
+          mkdir -p /tmp/xn/encode-voices/src
+          cp ${{ github.workspace }}/ci/encode-voices/Cargo.toml /tmp/xn/encode-voices/Cargo.toml
+          cp ${{ github.workspace }}/ci/encode-voices/src/main.rs /tmp/xn/encode-voices/src/main.rs
+          sed -i 's|members = \[|members = [\n  "encode-voices",|' /tmp/xn/Cargo.toml
 
-      - name: Inspect pocket-tts package
-        run: |
-          python -c "
-          import pocket_tts, inspect
-          from pocket_tts.models.tts_model import TTSModel, RECOMMENDED_CONFIG, PREDEFINED_VOICES, init_states, export_model_state, get_flow_lm_state_dict
-          print('RECOMMENDED_CONFIG:', RECOMMENDED_CONFIG)
-          print('PREDEFINED_VOICES:', PREDEFINED_VOICES)
-          print('TTSModel init sig:', inspect.signature(TTSModel.__init__))
-          print('init_states sig:', inspect.signature(init_states))
-          print('export_model_state sig:', inspect.signature(export_model_state))
-          print('get_flow_lm_state_dict sig:', inspect.signature(get_flow_lm_state_dict))
-          "
+      - name: Build encode-voices
+        working-directory: /tmp/xn
+        run: cargo build --release -p encode-voices
 
       - name: Encode voices
-        run: python encode_voices.py
+        working-directory: ${{ github.workspace }}
+        run: /tmp/xn/target/release/encode-voices
 
-      - name: Check for generated files
-        run: ls -lh gh-pages-src/demo/voices/*.safetensors || echo "No safetensors files generated"
+      - name: List generated files
+        run: ls -lh gh-pages-src/demo/voices/
 
       - name: Commit encoded voices
         run: |
