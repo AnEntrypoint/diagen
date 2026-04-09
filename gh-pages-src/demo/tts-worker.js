@@ -1,5 +1,7 @@
 import init, { Model } from './wasm_pocket_tts.js'
 
+caches.keys().then(keys => keys.forEach(k => { if (k.startsWith('tts-wasm-cache') && k !== 'tts-wasm-cache-v3') caches.delete(k) }))
+
 const HF_BASE = 'https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/main'
 const MODEL_URL = `${HF_BASE}/tts_b6369a24.safetensors`
 const TOKENIZER_URL = `${HF_BASE}/tokenizer.model`
