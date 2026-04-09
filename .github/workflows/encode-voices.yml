@@ -36,10 +36,14 @@ jobs:
       - name: Inspect pocket-tts package
         run: |
           python -c "
-          import pocket_tts
-          print('TOP:', dir(pocket_tts))
-          print('models:', dir(pocket_tts.models))
-          from pocket_tts.models import tts_model; print('tts_model:', dir(tts_model))
+          import pocket_tts, inspect
+          from pocket_tts.models.tts_model import TTSModel, RECOMMENDED_CONFIG, PREDEFINED_VOICES, init_states, export_model_state, get_flow_lm_state_dict
+          print('RECOMMENDED_CONFIG:', RECOMMENDED_CONFIG)
+          print('PREDEFINED_VOICES:', PREDEFINED_VOICES)
+          print('TTSModel init sig:', inspect.signature(TTSModel.__init__))
+          print('init_states sig:', inspect.signature(init_states))
+          print('export_model_state sig:', inspect.signature(export_model_state))
+          print('get_flow_lm_state_dict sig:', inspect.signature(get_flow_lm_state_dict))
           "
 
       - name: Encode voices
