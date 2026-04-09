@@ -22,7 +22,7 @@ function scheduleChunk(pcm) {
   const src = audioCtx.createBufferSource()
   src.buffer = buf
   src.connect(analyser)
-  const at = Math.max(nextAt, audioCtx.currentTime + 0.05)
+  const at = Math.max(nextAt, audioCtx.currentTime)
   src.start(at)
   nextAt = at + pcm.length / 24000
   return src

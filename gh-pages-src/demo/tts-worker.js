@@ -164,7 +164,6 @@ async function handleGenerate(text, voiceName) {
     const chunk = model.generation_step()
     if (!chunk) break
     self.postMessage({ type: 'audio_chunk', data: chunk.buffer }, [chunk.buffer])
-    await new Promise(r => setTimeout(r, 0))
   }
   self.postMessage({ type: 'stream_ended' })
 }
