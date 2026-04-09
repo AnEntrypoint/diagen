@@ -81,8 +81,8 @@ fn encode_voice(
             if end == 0 {
                 return Err(xn::Error::msg(format!("layer {i} current_end=0 after prompt_audio")));
             }
-            let k = mha.k_cache.contiguous()?;
-            let v = mha.v_cache.contiguous()?;
+            let k = mha.k_cache.narrow(1, 0..mha.k_cache.dim(1usize)?)?.contiguous()?;
+            let v = mha.v_cache.narrow(1, 0..mha.v_cache.dim(1usize)?)?.contiguous()?;
             let (b, full_seq, h, d) = k.dims4()?;
             let k5 = k.reshape((1usize, b, full_seq, h, d))?;
             let v5 = v.reshape((1usize, b, full_seq, h, d))?;
