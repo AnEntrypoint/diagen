@@ -121,63 +121,6 @@ async function fetchBufWithCache(url, cacheKey) {
   }
 }
 
-async function loadCustomVoiceState(wavBuffer) {
-  // Decode WAV to 24kHz mono audio
-  const audioData = decodeWavTo24k(wavBuffer)
-
-  // Create KV cache state by running prompt_text with voice audio
-  // This requires calling model.prepare_voice_state(audioData)
-  // For now, we'll need to implement voice encoding in Rust/WASM
-  // or use a Python backend to pre-encode voices
-
-  // Placeholder: return empty state that will be replaced by pre-encoded versions
-  return new Uint8Array(0)
-}
-
-function decodeWavTo24k(buffer) {
-  const view = new DataView(buffer)
-  const channels = view.getUint16(22, true)
-  const sampleRate = view.getUint32(24, true)
-  const byteRate = view.getUint32(28, true)
-  const blockAlign = view.getUint16(32, true)
-  const bitsPerSample = view.getUint16(34, true)
-
-  let dataOffset = 36
-  while (dataOffset < buffer.byteLength) {
-    const chunkId = new TextDecoder().decode(new Uint8Array(buffer, dataOffset, 4))
-    const chunkSize = view.getUint32(dataOffset + 4, true)
-    if (chunkId === 'data') break
-    dataOffset += 8 + chunkSize
-  }
-
-  const numSamples = Math.floor((buffer.byteLength - dataOffset - 8) / (channels * bitsPerSample / 8))
-  const mono = new Float32Array(numSamples)
-  const bytesPerSample = bitsPerSample / 8
-
-  for (let i = 0; i < numSamples; i++) {
-    let sample = 0
-    for (let ch = 0; ch < channels; ch++) {
-      const offset = dataOffset + 8 + i * channels * bytesPerSample + ch * bytesPerSample
-      if (bitsPerSample === 16) {
-        sample += view.getInt16(offset, true)
-      } else if (bitsPerSample === 32) {
-        sample += view.getInt32(offset, true)
-      }
-    }
-    mono[i] = (sample / channels) / (bitsPerSample === 16 ? 32768 : 2147483648)
-  }
-
-  if (sampleRate === 24000) return mono
-  const ratio = sampleRate / 24000
-  const out = new Float32Array(Math.round(numSamples / ratio))
-  for (let i = 0; i < out.length; i++) {
-    const idx = i * ratio
-    const lo = Math.floor(idx)
-    const hi = Math.min(lo + 1, numSamples - 1)
-    out[i] = mono[lo] * (1 - (idx - lo)) + mono[hi] * (idx - lo)
-  }
-  return out
-}
 
 async function handleLoad() {
   self.postMessage({ type: 'status', status: 'Initializing WASM...' })
@@ -221,6 +164,7 @@ async function handleGenerate(text, voiceName) {
     const chunk = model.generation_step()
     if (!chunk) break
     self.postMessage({ type: 'audio_chunk', data: chunk.buffer }, [chunk.buffer])
+    await new Promise(r => setTimeout(r, 0))
   }
   self.postMessage({ type: 'stream_ended' })
 }
