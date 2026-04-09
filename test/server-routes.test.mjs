@@ -32,12 +32,6 @@ beforeAll(() => {
     if (!text) return res.status(400).json({ error: 'text required' })
     res.status(503).json({ error: 'Models not loaded in test' })
   })
-
-  app.post('/dialog', (req, res) => {
-    const { prompt } = req.body
-    if (!prompt) return res.status(400).json({ error: 'prompt required' })
-    res.status(503).json({ error: 'Models not loaded in test' })
-  })
 })
 
 async function request(method, path, body) {
@@ -121,15 +115,3 @@ describe('POST /api/generate', () => {
   })
 })
 
-describe('POST /dialog', () => {
-  it('returns 400 without prompt', async () => {
-    const r = await request('POST', '/dialog', {})
-    expect(r.status).toBe(400)
-    expect(r.body.error).toBe('prompt required')
-  })
-
-  it('returns 503 with prompt but no models', async () => {
-    const r = await request('POST', '/dialog', { prompt: 'hi' })
-    expect(r.status).toBe(503)
-  })
-})
