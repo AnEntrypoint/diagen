@@ -7,16 +7,31 @@ import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { loadQwenModel, generateDialog } from './qwen-dialog.mjs'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
+import os from 'os'
 
 const require = createRequire(import.meta.url)
+const ORT_CPUS = os.cpus().length
+const origOrtCreate = ort.InferenceSession.create.bind(ort.InferenceSession)
+ort.InferenceSession.create = async function(modelPath, options = {}) {
+  const providers = options.executionProviders || ['cpu']
+  const patched = {
+    ...options,
+    executionProviders: providers.includes('dml') ? providers : ['dml', ...providers],
+    intraOpNumThreads: Math.max(options.intraOpNumThreads || 0, ORT_CPUS),
+    interOpNumThreads: Math.max(options.interOpNumThreads || 0, Math.floor(ORT_CPUS / 4)),
+    executionMode: 'parallel',
+    enableCpuMemArena: true,
+    enableMemPattern: true,
+    graphOptimizationLevel: options.graphOptimizationLevel || 'all',
+  }
+  return origOrtCreate(modelPath, patched)
+}
 const ttsOnnx = require('webtalk/server-tts-onnx')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const port = process.env.PORT || 8080
-
 app.use(express.json({ limit: '50mb' }))
-
 app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin')
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp')
@@ -26,16 +41,13 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200)
   next()
 })
-
 const CLEETUS_WAV = path.join(__dirname, 'voices', 'cleetus.wav')
 const TTS_MODELS_DIR = path.join(__dirname, 'models', 'tts')
-
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')))
 app.get('/client.js', (req, res) => res.sendFile(path.join(__dirname, 'client.js')))
 app.get('/animation-core.mjs', (req, res) => res.sendFile(path.join(__dirname, 'animation-core.mjs')))
 app.get('/Cleetus.vrm', (req, res) => res.sendFile(path.join(__dirname, 'Cleetus.vrm')))
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')))
-
 const DEMO_DIR = path.join(__dirname, 'gh-pages-src', 'demo')
 const VOICES_DIR = path.join(__dirname, 'voices')
 app.get('/demo/voices/manifest.json', (req, res) => {
@@ -44,11 +56,8 @@ app.get('/demo/voices/manifest.json', (req, res) => {
 })
 app.use('/demo/voices', express.static(VOICES_DIR))
 app.use('/demo', express.static(DEMO_DIR))
-
-const SAMPLE_RATE = 24000
-const A2F_SAMPLE_RATE = 16000
-let a2f = null
-let voiceEmbedding = null
+const SAMPLE_RATE = 24000, A2F_SAMPLE_RATE = 16000
+let a2f = null, voiceEmbedding = null
 
 async function loadA2F() {
   if (a2f) return a2f
@@ -60,7 +69,6 @@ async function loadA2F() {
   console.log('[a2f] Loaded')
   return a2f
 }
-
 async function loadVoiceEmbedding() {
   if (voiceEmbedding) return voiceEmbedding
   if (!fs.existsSync(CLEETUS_WAV)) {
@@ -87,16 +95,13 @@ async function loadVoiceEmbedding() {
   console.log('[voice] Voice encoded, shape:', voiceEmbedding.shape)
   return voiceEmbedding
 }
-
 app.post('/api/generate', async (req, res) => {
   try {
     const { text } = req.body
     if (!text) return res.status(400).json({ error: 'text required' })
-
     await loadA2F()
     const voiceEmb = await loadVoiceEmbedding()
     if (!voiceEmb) return res.status(500).json({ error: 'Voice embedding not available' })
-
     const startTime = performance.now()
 
     const audioFloat = await ttsOnnx.synthesize(text, voiceEmb, TTS_MODELS_DIR)
@@ -104,7 +109,6 @@ app.post('/api/generate', async (req, res) => {
       Promise.resolve(encodeWAV(audioFloat, SAMPLE_RATE)),
       Promise.resolve(resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE))
     ])
-
     const fps = 30
     const stride = Math.round(A2F_SAMPLE_RATE / fps)
     const bufferLen = a2f.bufferLen
@@ -125,7 +129,6 @@ app.post('/api/generate', async (req, res) => {
         blendshapes: result.blendshapes
       })
     }
-
     const audioDuration = audioFloat.length / SAMPLE_RATE
     const targetNumFrames = Math.ceil(audioDuration * fps)
     const frames = new Array(targetNumFrames)
@@ -133,12 +136,7 @@ app.post('/api/generate', async (req, res) => {
     for (let frameIdx = 0; frameIdx < targetNumFrames; frameIdx++) {
       const frameTime = frameIdx / fps
       const frame = new Float32Array(52)
-
-      if (results.length === 0 || frameTime < results[0].time) {
-        frames[frameIdx] = frame
-        continue
-      }
-
+      if (results.length === 0 || frameTime < results[0].time) { frames[frameIdx] = frame; continue }
       while (cursor < results.length - 1 && results[cursor + 1].time <= frameTime) cursor++
 
       const curr = results[cursor]
@@ -183,7 +181,6 @@ async function ensureModels() {
   const { downloadModels } = await import('./download-models.js')
   await downloadModels()
 }
-
 async function start() {
   await ensureModels()
   await loadA2F()
