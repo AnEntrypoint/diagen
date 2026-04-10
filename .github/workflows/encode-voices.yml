@@ -5,7 +5,6 @@ on:
     paths:
       - 'gh-pages-src/demo/voices/*.wav'
       - '.github/workflows/encode-voices.yml'
-      - 'ci/encode-voices/**'
   workflow_dispatch:
 
 jobs:
@@ -14,37 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: actions/cache@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            /tmp/xn/target
-          key: ${{ runner.os }}-cargo-encode-voices-v4
+          node-version: '20'
 
-      - name: Clone xn-repo
-        run: |
-          rm -rf /tmp/xn
-          git clone --depth 1 https://github.com/LaurentMazare/xn.git /tmp/xn
-          mkdir -p /tmp/xn/encode-voices/src
-          cp ${{ github.workspace }}/ci/encode-voices/Cargo.toml /tmp/xn/encode-voices/Cargo.toml
-          cp ${{ github.workspace }}/ci/encode-voices/src/main.rs /tmp/xn/encode-voices/src/main.rs
-          sed -i 's|members = \[|members = [\n  "encode-voices",|' /tmp/xn/Cargo.toml
+      - name: Install dependencies
+        run: npm install --ignore-scripts
 
-      - name: Build encode-voices
-        working-directory: /tmp/xn
-        run: cargo build --release -p encode-voices
+      - name: Download TTS models
+        run: node download-models.js
 
       - name: Encode voices
-        working-directory: ${{ github.workspace }}
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: /tmp/xn/target/release/encode-voices
+        run: node ci/encode-voices/encode.js
 
       - name: List generated files
         run: ls -lh gh-pages-src/demo/voices/
