@@ -1,6 +1,6 @@
 import init, { Model } from './wasm_pocket_tts.js'
 
-caches.keys().then(keys => keys.forEach(k => { if (k.startsWith('tts-wasm-cache') && k !== 'tts-wasm-cache-v3') caches.delete(k) }))
+caches.keys().then(keys => keys.forEach(k => { if (k.startsWith('tts-wasm-cache') && k !== 'tts-wasm-cache-v4') caches.delete(k) }))
 
 const HF_BASE = 'https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/main'
 const MODEL_URL = `${HF_BASE}/tts_b6369a24.safetensors`
@@ -8,7 +8,7 @@ const TOKENIZER_URL = `${HF_BASE}/tokenizer.model`
 const VOICE_NAMES = ['alba', 'marius', 'javert', 'fantine', 'cosette', 'eponine', 'azelma']
 const CUSTOM_VOICE_NAMES = ['cleetus', 'vampire']
 const DEFAULT_VOICE = 'alba'
-const CACHE_NAME = 'tts-wasm-cache-v3'
+const CACHE_NAME = 'tts-wasm-cache-v4'
 
 const wasmModulePromise = WebAssembly.compileStreaming(fetch('./wasm_pocket_tts_bg.wasm'))
 

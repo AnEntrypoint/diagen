@@ -1,5 +1,5 @@
 import { initVRM, setVRMPaused } from './vrm-viewer.js'
-import { startTTS, isTtsReady, onVoiceChange, speak } from './app-tts.js?v=4'
+import { startTTS, isTtsReady, onVoiceChange, speak } from './app-tts.js?v=5'
 import { buildPersonaHistory } from './app-persona.js'
 
 const worker = new Worker('./worker.js?v=65', { type: 'module' })
