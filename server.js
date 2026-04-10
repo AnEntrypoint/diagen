@@ -12,10 +12,12 @@ const require = createRequire(import.meta.url)
 const ORT_CPUS = os.cpus().length
 const origOrtCreate = ort.InferenceSession.create.bind(ort.InferenceSession)
 ort.InferenceSession.create = async function(modelPath, options = {}) {
-  const providers = options.executionProviders || ['cpu']
+  const explicit = options.executionProviders
+  const providers = explicit || ['cpu']
+  const wantDml = !explicit || (!providers.includes('cpu') || providers.length > 1)
   const patched = {
     ...options,
-    executionProviders: providers.includes('dml') ? providers : ['dml', ...providers],
+    executionProviders: (wantDml && !providers.includes('dml')) ? ['dml', ...providers] : providers,
     intraOpNumThreads: Math.max(options.intraOpNumThreads || 0, ORT_CPUS),
     interOpNumThreads: Math.max(options.interOpNumThreads || 0, Math.floor(ORT_CPUS / 4)),
     executionMode: 'parallel',
