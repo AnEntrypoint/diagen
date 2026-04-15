@@ -6,10 +6,15 @@ import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
-import { initDiscordBot, sendMessage as discordSendMessage, connectToVoiceChannel, disconnectFromVoiceChannel, getDebugState } from './discord-handler.js'
-import { setVoiceEmbedding } from './discord-voice-processor.js'
 import { synthesize as synthesizeOmniVoice } from './omnivoice-tts-bridge.js'
 import os from 'os'
+
+let initDiscordBot = null
+let sendMessage = null
+let connectToVoiceChannel = null
+let disconnectFromVoiceChannel = null
+let getDebugState = null
+let setVoiceEmbedding = null
 
 const require = createRequire(import.meta.url)
 const ORT_CPUS = os.cpus().length
@@ -163,6 +168,7 @@ async function ensureModels() {
 
 // Discord API endpoints
 app.post('/api/discord/voice/connect', async (req, res) => {
+  if (!connectToVoiceChannel) return res.status(503).json({ error: 'Discord not enabled' })
   try {
     const { guildId, channelId } = req.body
     if (!guildId || !channelId) {
@@ -177,6 +183,7 @@ app.post('/api/discord/voice/connect', async (req, res) => {
 })
 
 app.post('/api/discord/voice/disconnect', (req, res) => {
+  if (!disconnectFromVoiceChannel) return res.status(503).json({ error: 'Discord not enabled' })
   try {
     disconnectFromVoiceChannel()
     res.json({ success: true })
@@ -187,12 +194,13 @@ app.post('/api/discord/voice/disconnect', (req, res) => {
 })
 
 app.post('/api/discord/message', async (req, res) => {
+  if (!sendMessage) return res.status(503).json({ error: 'Discord not enabled' })
   try {
     const { channelId, message } = req.body
     if (!channelId || !message) {
       return res.status(400).json({ error: 'channelId and message required' })
     }
-    await discordSendMessage(channelId, message)
+    await sendMessage(channelId, message)
     res.json({ success: true })
   } catch (err) {
     console.error('[api] Discord message error:', err)
@@ -201,6 +209,7 @@ app.post('/api/discord/message', async (req, res) => {
 })
 
 app.get('/debug/discord', (req, res) => {
+  if (!getDebugState) return res.status(503).json({ error: 'Discord not enabled' })
   try {
     const state = getDebugState()
     res.json(state)
@@ -215,19 +224,34 @@ async function start() {
   await loadA2F()
   await loadVoiceEmbedding()
 
-  setVoiceEmbedding(CLEETUS_WAV)
-  console.log('[server] Voice reference path set for Discord processor')
+  // Lazy load Discord modules only if DISCORD_TOKEN is set
+  if (process.env.DISCORD_TOKEN) {
+    try {
+      const discordHandler = await import('./discord-handler.js')
+      const discordProcessor = await import('./discord-voice-processor.js')
 
-  // Initialize Discord bot
-  const onCommand = async (userId, prompt) => {
-    // For now, just echo back the command - integrate with LLM later
-    return `Received: ${prompt}`
+      initDiscordBot = discordHandler.initDiscordBot
+      sendMessage = discordHandler.sendMessage
+      connectToVoiceChannel = discordHandler.connectToVoiceChannel
+      disconnectFromVoiceChannel = discordHandler.disconnectFromVoiceChannel
+      getDebugState = discordHandler.getDebugState
+      setVoiceEmbedding = discordProcessor.setVoiceEmbedding
+
+      setVoiceEmbedding(CLEETUS_WAV)
+      console.log('[server] Voice reference path set for Discord processor')
+
+      // Initialize Discord bot
+      const onCommand = async (userId, prompt) => {
+        return `Received: ${prompt}`
+      }
+      const onUserAudio = (userId, pcmChunk) => {
+        console.log(`[discord] Audio chunk from user ${userId}, ${pcmChunk.length} samples`)
+      }
+      await initDiscordBot(onUserAudio, onCommand)
+    } catch (err) {
+      console.error('[server] Failed to load Discord modules:', err.message)
+    }
   }
-  const onUserAudio = (userId, pcmChunk) => {
-    // Handle incoming audio from Discord users
-    console.log(`[discord] Audio chunk from user ${userId}, ${pcmChunk.length} samples`)
-  }
-  await initDiscordBot(onUserAudio, onCommand)
 
   app.listen(port, '0.0.0.0', () => {
     console.log(`diagen server running on http://localhost:${port}`)
