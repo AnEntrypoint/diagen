@@ -94,8 +94,8 @@ while True:
     readyTimeout = setTimeout(() => {
       readyTimeout = null
       if (ttsProcess) ttsProcess.kill()
-      reject(new Error('OmniVoice server startup timeout (180s)'))
-    }, 180000)
+      reject(new Error('OmniVoice server startup timeout (600s - model download may be in progress)'))
+    }, 600000)
 
     ttsProcess.stderr.on('data', (chunk) => {
       stderrOutput += chunk.toString()
@@ -138,8 +138,8 @@ export async function synthesize(text, refAudioPath, refText) {
     let responseData = '';
     const timeout = setTimeout(() => {
       responseListener?.();
-      reject(new Error('TTS synthesis timeout (30s)'));
-    }, 30000);
+      reject(new Error('TTS synthesis timeout (300s - model may be downloading)'));
+    }, 300000);
 
     const responseListener = ttsProcess.stdout.once('data', (chunk) => {
       clearTimeout(timeout);
