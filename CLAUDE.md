@@ -28,6 +28,38 @@ To switch to Qwen2.5-0.5B abliterated (faster, roleplay-focused):
 - Workflow: downloads PyTorch weights → optimum-cli ONNX export → MatMulNBitsQuantizer q4f16 → splits into ≤99MB parts → commits model files + updates worker.js to main
 - `*.py` is in .gitignore — Python helpers are inlined as workflow heredocs, not separate files
 
+## STT — Whisper Speech-to-Text
+
+The browser demo and Discord voice integration use **Whisper** (OpenAI) for speech-to-text transcription.
+
+### Node.js / Discord Voice
+
+**Implementation**: `discord-whisper.js` module using `@xenova/transformers` library.
+
+**Model**: `Xenova/whisper-tiny` (39MB quantized ONNX)
+- Lightweight inference-optimized version of Whisper
+- Suitable for real-time Discord voice processing
+- Runs fully on-device, no external API calls
+
+**API**:
+```javascript
+import { transcribe } from './discord-whisper.js';
+
+// Discord PCM is 48kHz 16-bit mono
+const result = await transcribe(pcmBuffer, 48000);
+// Returns: { text: string, confidence: number }
+```
+
+**Features**:
+- Automatic resampling 48kHz → 16kHz (Whisper requirement)
+- Model cached in memory after first download
+- Concurrent call handling (promise-based singleton)
+- Memory-safe chunked processing (30s max per inference)
+
+**First Call**: Downloads model (~39MB) from HuggingFace on first transcribe() call. Cached thereafter.
+
+Alternative models available: `Xenova/whisper-small` (74MB), `Xenova/whisper-base` (137MB), `Xenova/whisper-medium` (308MB). Change in `discord-whisper.js` initPipeline() if needed.
+
 ## TTS — Pocket TTS WASM with Voice Cloning
 
 The browser demo uses **Pocket TTS** (Kyutai Labs) compiled to WebAssembly for fast, on-device text-to-speech.
