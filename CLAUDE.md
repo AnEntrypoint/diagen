@@ -148,6 +148,23 @@ Diagen includes optional Discord bot support for text and voice interactions.
   - `POST /api/discord/voice/disconnect` — leave voice channel
   - `POST /api/discord/message` — send message to channel
 
+### Voice Channel Selection
+
+**Command**: `!join <channel-id>`
+- Stores selected guild and channel IDs in module state
+- Calls connectToVoiceChannel() to join the voice channel
+- Provides user feedback on join attempt
+
+**Module State**:
+```javascript
+currentChannelState = { guildId: null, channelId: null }
+```
+
+**API Functions**:
+- `handleJoinCommand(guildId, channelId)` — async function to store channel state and connect
+- `getCurrentChannelState()` — getter returning copy of stored channel state
+- Observable via `getDebugState()` endpoint which exposes guildId and channelId
+
 ### Dependencies
 
-Added: `discord.js`, `@discordjs/voice`, `prism-media`
+Added: `discord.js`, `@discordjs/voice`, `prism-media`, `@xenova/transformers`
