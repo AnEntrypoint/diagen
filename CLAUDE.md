@@ -134,10 +134,11 @@ Diagen includes optional Discord bot support for text and voice interactions.
 - Automatically splits responses >2000 chars into multiple messages
 - Ignores bot messages and DMs
 
-**Voice (coming soon)**:
-- Listen to users in voice channels
-- Process audio through animation pipeline
-- Send synthesized responses
+**Voice (processing pipeline)**:
+- Listen to users in voice channels via onUserAudio callback
+- Process audio through discord-voice-processor pipeline
+- Synthesize responses and send to Discord voice connection
+- Full end-to-end pipeline: transcribe → generate → synthesize → resample
 
 ### Architecture
 
@@ -189,6 +190,68 @@ This permanent, queryable endpoint provides complete visibility into:
 - Active processing queue for debugging
 
 Query via curl or monitoring tools: `curl http://localhost:8080/debug/discord`
+
+### Voice Audio Processing Pipeline
+
+**Module**: `discord-voice-processor.js` — Complete end-to-end audio processing pipeline for Discord voice interactions.
+
+**Pipeline Flow**:
+```
+48kHz PCM Input → Transcribe → Generate → Synthesize → Resample → 48kHz PCM Output
+     (16-bit)       (STT)      (text)      (24kHz)      (24→48k)    (Uint8Array)
+```
+
+**API**:
+```javascript
+import { processUserAudio, setVoiceEmbedding } from './discord-voice-processor.js';
+
+// Initialize with voice embedding (call once after loading voice)
+setVoiceEmbedding(voiceEmbedding);
+
+// Process user audio through complete pipeline
+const pcmOutput = await processUserAudio(pcmBuffer, 48000, userId);
+// Returns: Uint8Array of 48kHz 16-bit PCM ready for Discord transmission
+```
+
+**Step Details**:
+
+1. **Transcribe** (`discord-whisper.js`): Converts 48kHz PCM to text using Whisper STT
+   - Input: Buffer | Uint8Array, 48kHz mono 16-bit PCM
+   - Output: { text: string, confidence: number }
+   - Handles empty/silent audio gracefully
+
+2. **Generate**: Template-based response generation from user text
+   - Handles silence detection (returns default message if no speech)
+   - Extensible for future LLM integration
+
+3. **Synthesize** (`ttsOnnx`): Text-to-speech synthesis at 24kHz
+   - Input: Response text, voice embedding tensor
+   - Output: Float32Array at 24kHz
+   - Uses server-loaded voice embedding for voice cloning
+
+4. **Resample** (`server-utils.mjs`): Linear interpolation resampling from 24kHz to 48kHz
+   - Ensures Discord voice channel compatibility
+   - Preserves audio fidelity through smooth interpolation
+
+5. **Convert to PCM**: Float32 [-1, 1] to Int16 [-32768, 32767] with clamping
+   - Packs int16 samples into Uint8Array (little-endian)
+   - Ready for Discord voice transmission
+
+**Error Handling**:
+- All errors include context: step name, userId, input size/format
+- Examples: `step=input userId=123`, `step=synthesize userId=456: <error details>`
+- Propagates errors loudly (no silent fallbacks)
+
+**Integration Points**:
+- `discord-handler.js`: Calls processUserAudio in onUserAudio callback (async)
+- `server.js`: Calls setVoiceEmbedding(voiceEmbedding) during startup to initialize
+- Voice embedding loaded from voices/cleetus.wav (or configured voice file)
+
+**Constraints**:
+- Module is 135 lines, under 200-line limit
+- Zero magic numbers (uses SAMPLE_RATE_DISCORD=48000, SAMPLE_RATE_TTS=24000 constants)
+- Requires voice embedding to be set before processing audio
+- TTS models must be loaded (done via ttsOnnx.loadModels() in server.js)
 
 ### Dependencies
 
