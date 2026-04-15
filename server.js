@@ -7,6 +7,7 @@ import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
 import { initDiscordBot, sendMessage as discordSendMessage, connectToVoiceChannel, disconnectFromVoiceChannel, getDebugState } from './discord-handler.js'
+import { setVoiceEmbedding } from './discord-voice-processor.js'
 import os from 'os'
 
 const require = createRequire(import.meta.url)
@@ -229,6 +230,12 @@ async function start() {
   await ensureModels()
   await loadA2F()
   await loadVoiceEmbedding()
+
+  // Make voice embedding available to Discord voice processor
+  if (voiceEmbedding) {
+    setVoiceEmbedding(voiceEmbedding)
+    console.log('[server] Voice embedding loaded for Discord processor')
+  }
 
   // Initialize Discord bot
   const onCommand = async (userId, prompt) => {
