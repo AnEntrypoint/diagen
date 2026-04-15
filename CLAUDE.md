@@ -166,6 +166,35 @@ currentChannelState = { guildId: null, channelId: null }
 - `getCurrentChannelState()` — getter returning copy of stored channel state
 - `getDebugState()` — getter returning debug state object (see Observability below)
 
+### Audio Sending
+
+**Function**: `sendAudioToDiscord(pcmBuffer, sampleRate)` in `discord-bot-client.js`
+
+Sends PCM audio to active Discord voice connection with automatic encoding and playback.
+
+**PCM Format Support**:
+- Input: Float32Array [-1.0, 1.0], Int16Array [-32768, 32767], or Buffer (interpreted as Int16 LE)
+- Sample Rate: any valid rate (automatically resampled to 48kHz)
+- Output: 48kHz, 16-bit PCM via discord.js voice subsystem
+
+**Encoding Strategy**:
+1. Normalize input PCM to 48kHz Float32Array via `normalizePcmTo48k()`
+2. Convert Float32 to Int16 with clamping
+3. Try Opus encoding if `prism.opus.Encoder` available
+4. Fall back to Raw PCM if Opus unavailable
+5. Queue audio to voice player via `voiceConnection.state.subscription.player.play()`
+
+**Error Handling**:
+- Throws if `voiceConnection` is null or not Ready
+- Throws if `voiceConnection.state.subscription` is unavailable
+- Propagates encoding/resampling errors with context
+
+**Metrics Tracking**:
+- `audioSendQueue`: circular buffer of last 100 audio sends (timestamp, byte count)
+- `totalAudioFramesSent`: cumulative sample count
+- `lastSendTimestamp`: Unix timestamp of most recent send
+- `lastSendError`: last error with timestamp
+
 ### Observability
 
 **Debug Endpoint**: `GET /debug/discord`
@@ -178,7 +207,14 @@ Returns real-time Discord bot state as JSON:
   "channelId": string | null,
   "lastError": string | null,
   "messageCount": number,
-  "processingQueue": array
+  "processingQueue": array,
+  "audio": {
+    "audioQueueLength": number,
+    "totalAudioFramesSent": number,
+    "lastSendTimestamp": number | null,
+    "lastSendError": { message: string, timestamp: number } | null,
+    "queueHistory": array
+  }
 }
 ```
 
@@ -188,6 +224,7 @@ This permanent, queryable endpoint provides complete visibility into:
 - Last error encountered (if any)
 - Message count for monitoring activity
 - Active processing queue for debugging
+- Audio send metrics: queue length, total frames sent, last send timestamp, errors
 
 Query via curl or monitoring tools: `curl http://localhost:8080/debug/discord`
 
