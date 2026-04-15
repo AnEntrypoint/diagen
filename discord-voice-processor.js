@@ -1,29 +1,14 @@
 import { transcribe } from './discord-whisper.js'
 import { resampleAudio } from './server-utils.mjs'
-import { createRequire } from 'module'
-
-const require = createRequire(import.meta.url)
-const ttsOnnx = require('webtalk/server-tts-onnx')
+import { synthesize } from './omnivoice-tts-bridge.js'
 
 const SAMPLE_RATE_DISCORD = 48000
 const SAMPLE_RATE_TTS = 24000
-const TTS_MODELS_DIR = './models/tts'
 
-let ttsModelsLoaded = false
-let globalVoiceEmbedding = null
+let voiceReferencePath = null
 
-async function ensureTtsModels() {
-  if (ttsModelsLoaded) return
-  try {
-    await ttsOnnx.loadModels(TTS_MODELS_DIR)
-    ttsModelsLoaded = true
-  } catch (err) {
-    throw new Error(`Failed to load TTS models: ${err.message}`)
-  }
-}
-
-export function setVoiceEmbedding(embedding) {
-  globalVoiceEmbedding = embedding
+export function setVoiceEmbedding(refAudioPath) {
+  voiceReferencePath = refAudioPath
 }
 
 function generateResponse(text, userId) {
@@ -68,8 +53,10 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
 
     const responseText = generateResponse(transcription.text, userId)
 
-    await ensureTtsModels()
-    const ttsOutput = await ttsOnnx.synthesize(responseText, globalVoiceEmbedding, TTS_MODELS_DIR)
+    if (!voiceReferencePath) {
+      throw new Error(`step=voiceRef userId=${userId}: voice reference not set`)
+    }
+    const ttsOutput = await synthesize(responseText, voiceReferencePath, 'reference speech')
     if (!ttsOutput || ttsOutput.length === 0) {
       throw new Error(`step=synthesize userId=${userId}: empty synthesis output`)
     }
