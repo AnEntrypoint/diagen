@@ -310,3 +310,29 @@ Vitest suite verifying voice processing pipeline components:
 **Real Imports**: Tests import actual `resampleAudio` from `server-utils.mjs` for witnessed resampling verification (not mocked).
 
 **Run**: `npm test -- test/discord-voice-pipeline.test.mjs`
+
+## Discord Context — Per-Channel Message History
+
+**Module**: `discord-context.js` (47 lines)
+
+In-memory context store for Discord voice interactions. Maintains per-guild/channel message history for stateful response generation.
+
+**Exports**:
+- `addMessage(guildId, channelId, userId, role, text)` — Append message with timestamp
+- `getContext(guildId, channelId)` — Retrieve last 20 messages (or all if fewer)
+- `clearContext(guildId, channelId)` — Delete all messages for a channel
+
+**Storage Model**:
+- Map-based: keyed by `"${guildId}:${channelId}"` (guild/channel isolation)
+- FIFO queue per key: max 50 messages, drops oldest when exceeded
+- Each message: `{ userId, role, text, timestamp }`
+
+**Integration Points**:
+- Optional: Import into `discord-handler.js` to track !diagen commands and responses
+- Optional: Call in `disconnectFromVoiceChannel()` to clear history on channel exit
+- Optional: Expose via `getDebugState()` for observability endpoint
+
+**Use Case**: Enable multi-turn context for future LLM-based Discord responses. Store user prompts and bot replies for context window in subsequent message processing.
+
+**No Dependencies**: Pure JavaScript, Map-based data structure, no external packages.
+
