@@ -3,6 +3,10 @@ import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from '
 
 let discordClient = null
 let isConnected = false
+let currentChannelState = { guildId: null, channelId: null }
+let lastError = null
+let messageCount = 0
+let processingQueue = []
 
 /**
  * Initialize the Discord bot and register event handlers
@@ -27,6 +31,23 @@ async function initDiscordBot(onUserAudio, onCommand) {
   discordClient.on('messageCreate', async (message) => {
     // Ignore bot's own messages and DMs
     if (message.author.bot || !message.guild) return
+
+    // !join <channel-id> command
+    if (message.content.startsWith('!join ')) {
+      const channelId = message.content.slice(6).trim()
+      if (!channelId) {
+        await message.reply('Usage: !join <channel-id>')
+        return
+      }
+
+      try {
+        await handleJoinCommand(message.guildId, channelId)
+        await message.reply(`Joining voice channel ${channelId}...`)
+      } catch (err) {
+        console.error('[discord] Join command error:', err)
+        await message.reply('Error joining channel: ' + err.message)
+      }
+    }
 
     // Simple command handling: !diagen <prompt>
     if (message.content.startsWith('!diagen ')) {
@@ -160,8 +181,43 @@ function getDiscordClient() {
   return discordClient
 }
 
+/**
+ * Handle !join command - store channel state and connect
+ * @param {string} guildId - Discord guild ID
+ * @param {string} channelId - Discord voice channel ID
+ * @returns {Promise<void>}
+ */
+async function handleJoinCommand(guildId, channelId) {
+  currentChannelState.guildId = guildId
+  currentChannelState.channelId = channelId
+  console.log('[discord] Stored channel state:', currentChannelState)
+  await connectToVoiceChannel(guildId, channelId)
+}
+
+/**
+ * Get current stored channel state
+ * @returns {Object} Copy of current channel state
+ */
+function getCurrentChannelState() {
+  return { ...currentChannelState }
+}
+
 let onUserAudio = null
 let onCommand = null
+
+/**
+ * Get debug state for observability endpoint
+ */
+function getDebugState() {
+  return {
+    connected: isConnected,
+    guildId: currentChannelState.guildId,
+    channelId: currentChannelState.channelId,
+    lastError: lastError,
+    messageCount: messageCount,
+    processingQueue: processingQueue,
+  }
+}
 
 export {
   initDiscordBot,
@@ -171,4 +227,7 @@ export {
   sendAudioToVoice,
   isDiscordConnected,
   getDiscordClient,
+  handleJoinCommand,
+  getCurrentChannelState,
+  getDebugState,
 }
