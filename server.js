@@ -6,6 +6,7 @@ import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
+import { initDiscordBot, sendMessage as discordSendMessage, connectToVoiceChannel, disconnectFromVoiceChannel } from './discord-handler.js'
 import os from 'os'
 
 const require = createRequire(import.meta.url)
@@ -174,10 +175,61 @@ async function ensureModels() {
   const { downloadModels } = await import('./download-models.js')
   await downloadModels()
 }
+
+// Discord API endpoints
+app.post('/api/discord/voice/connect', async (req, res) => {
+  try {
+    const { guildId, channelId } = req.body
+    if (!guildId || !channelId) {
+      return res.status(400).json({ error: 'guildId and channelId required' })
+    }
+    await connectToVoiceChannel(guildId, channelId)
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[api] Discord voice connect error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/discord/voice/disconnect', (req, res) => {
+  try {
+    disconnectFromVoiceChannel()
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[api] Discord voice disconnect error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/discord/message', async (req, res) => {
+  try {
+    const { channelId, message } = req.body
+    if (!channelId || !message) {
+      return res.status(400).json({ error: 'channelId and message required' })
+    }
+    await discordSendMessage(channelId, message)
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[api] Discord message error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
 async function start() {
   await ensureModels()
   await loadA2F()
   await loadVoiceEmbedding()
+
+  // Initialize Discord bot
+  const onCommand = async (userId, prompt) => {
+    // For now, just echo back the command - integrate with LLM later
+    return `Received: ${prompt}`
+  }
+  const onUserAudio = (userId, pcmChunk) => {
+    // Handle incoming audio from Discord users
+    console.log(`[discord] Audio chunk from user ${userId}, ${pcmChunk.length} samples`)
+  }
+  await initDiscordBot(onUserAudio, onCommand)
+
   app.listen(port, '0.0.0.0', () => {
     console.log(`diagen server running on http://localhost:${port}`)
   })

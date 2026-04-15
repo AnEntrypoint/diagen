@@ -1,7 +1,8 @@
 node_modules/
 models/
 .env
-.env.*
+.env.local
+.env.*.local
 *.log
 *.stackdump
 bun.lock

@@ -80,3 +80,42 @@ transformer.layers.{i}.self_attn/current_end
 - **Part file URL pattern**: chunk files are named `model_q4f16.onnx.part0` (the `.onnx` extension precedes `.part`). The `fetchChunked` URL must be `${stem}.onnx.part${i}`, not `${stem}.part${i}`. A wrong URL silently serves GitHub Pages 404 HTML.
 
 - **HTML-poisoned cache**: GitHub Pages 404 responses are HTML (`<!DOCTYPE html>`) and can be large enough to pass a byte-size check. The cache bust must also check the first byte: `new Uint8Array(buf.slice(0,1))[0] === 0x3C` means HTML, delete it.
+
+## Discord Bot Integration
+
+Diagen includes optional Discord bot support for text and voice interactions.
+
+### Setup
+
+1. Create a Discord bot at https://discord.com/developers/applications
+2. Copy the bot token and add to `.env`:
+   ```
+   DISCORD_TOKEN=your_token_here
+   ```
+3. Invite the bot to your server with `bot` scope and these permissions: Send Messages, Read Message History, Connect, Speak, Use Voice Activity
+4. Start the server normally — Discord bot initializes automatically if `DISCORD_TOKEN` is set
+
+### Features
+
+**Text Commands** (`!diagen <prompt>`):
+- Responds in any channel where bot has message permissions
+- Automatically splits responses >2000 chars into multiple messages
+- Ignores bot messages and DMs
+
+**Voice (coming soon)**:
+- Listen to users in voice channels
+- Process audio through animation pipeline
+- Send synthesized responses
+
+### Architecture
+
+- `discord-bot-client.js` — Low-level Discord voice connection (from jeeves project)
+- `discord-handler.js` — Integration layer with diagen server
+- `server.js` — API endpoints for Discord control
+  - `POST /api/discord/voice/connect` — join voice channel
+  - `POST /api/discord/voice/disconnect` — leave voice channel
+  - `POST /api/discord/message` — send message to channel
+
+### Dependencies
+
+Added: `discord.js`, `@discordjs/voice`, `prism-media`
