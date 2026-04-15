@@ -1,5 +1,6 @@
 import { ChannelType } from 'discord.js'
-import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './discord-bot-client.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice, sendAudioToDiscord, getAudioDebugState } from './discord-bot-client.js'
+import { processUserAudio } from './discord-voice-processor.js'
 
 let discordClient = null
 let isConnected = false
@@ -114,7 +115,16 @@ async function connectToVoiceChannel(guildId, channelId) {
     if (channel.type === ChannelType.GuildVoice) {
       for (const member of channel.members.values()) {
         if (!member.user.bot) {
-          subscribeToSpeaker(member.id, (userId, pcmChunk) => {
+          subscribeToSpeaker(member.id, async (userId, pcmChunk) => {
+            try {
+              const audioOutput = await processUserAudio(pcmChunk, 48000, userId)
+              // Send processed audio to voice channel
+              // TODO: implement voice playback via Discord connection
+              console.log(`[discord] Processed audio for ${userId}: ${audioOutput.length} bytes`)
+            } catch (err) {
+              console.error(`[discord] Audio processing error for userId=${userId}: ${err.message}`)
+            }
+            // Also call original handler if provided
             if (onUserAudio) onUserAudio(userId, pcmChunk)
           })
         }
@@ -160,11 +170,21 @@ async function sendMessage(channelId, message) {
 
 /**
  * Send audio to Discord voice channel
- * @param {Uint8Array} pcmData - PCM audio data
+ * @param {Buffer|Float32Array|Int16Array} pcmData - PCM audio data
+ * @param {number} sampleRate - Sample rate of input (default 48000)
+ * @returns {Promise<void>}
  */
-function sendAudioToVoice(pcmData) {
-  // Placeholder for future implementation with voice sending
-  console.log('[discord] Audio sending not yet implemented')
+async function sendAudioToVoice(pcmData, sampleRate = 48000) {
+  if (!isConnected) {
+    throw new Error('[discord] Bot not connected to Discord');
+  }
+  try {
+    await sendAudioToDiscord(pcmData, sampleRate);
+  } catch (err) {
+    console.error(`[discord] Failed to send audio: ${err.message}`);
+    lastError = { message: err.message, timestamp: Date.now() };
+    throw err;
+  }
 }
 
 /**
@@ -209,6 +229,7 @@ let onCommand = null
  * Get debug state for observability endpoint
  */
 function getDebugState() {
+  const audioState = getAudioDebugState();
   return {
     connected: isConnected,
     guildId: currentChannelState.guildId,
@@ -216,6 +237,7 @@ function getDebugState() {
     lastError: lastError,
     messageCount: messageCount,
     processingQueue: processingQueue,
+    audio: audioState,
   }
 }
 
