@@ -118,13 +118,11 @@ async function connectToVoiceChannel(guildId, channelId) {
           subscribeToSpeaker(member.id, async (userId, pcmChunk) => {
             try {
               const audioOutput = await processUserAudio(pcmChunk, 48000, userId)
-              // Send processed audio to voice channel
-              // TODO: implement voice playback via Discord connection
+              await sendAudioToDiscord(audioOutput, 48000)
               console.log(`[discord] Processed audio for ${userId}: ${audioOutput.length} bytes`)
             } catch (err) {
               console.error(`[discord] Audio processing error for userId=${userId}: ${err.message}`)
             }
-            // Also call original handler if provided
             if (onUserAudio) onUserAudio(userId, pcmChunk)
           })
         }
