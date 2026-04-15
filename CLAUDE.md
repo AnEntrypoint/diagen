@@ -113,6 +113,94 @@ transformer.layers.{i}.self_attn/current_end
 
 - **HTML-poisoned cache**: GitHub Pages 404 responses are HTML (`<!DOCTYPE html>`) and can be large enough to pass a byte-size check. The cache bust must also check the first byte: `new Uint8Array(buf.slice(0,1))[0] === 0x3C` means HTML, delete it.
 
+## TTS — OmniVoice Python Backend with Voice Cloning
+
+Discord voice and server-side text-to-speech use **OmniVoice** (TTS system supporting 600+ languages) running as a Python subprocess for cross-platform compatibility and native voice cloning.
+
+### Setup
+
+OmniVoice requires Python 3.8+ with pip. Installation:
+```bash
+pip install omnivoice
+```
+
+On first synthesis call, OmniVoice downloads model weights (~500MB) from HuggingFace to ~/.cache/huggingface/hub/. Subsequent calls reuse cached model.
+
+### Architecture
+
+**Node.js→Python bridge**: omnivoice-tts-bridge.js spawns persistent Python subprocess (omnivoice_tts_server.py) that manages model lifecycle.
+
+**Communication protocol** (JSON over stdin/stdout):
+```javascript
+import { synthesize } from './omnivoice-tts-bridge.js';
+
+// Basic synthesis
+const audioFloat32 = await synthesize('Hello world');
+
+// With voice cloning (reference audio for style transfer)
+const audioWithClone = await synthesize('Custom voice text', '/path/to/voice.wav', 'reference speech');
+```
+
+**Request format** (sent to Python subprocess):
+```json
+{
+  "text": "text to synthesize",
+  "ref_audio_b64": "base64-encoded WAV or null",
+  "ref_text": "transcription of reference audio (optional)"
+}
+```
+
+**Response format** (from Python subprocess):
+```json
+{
+  "success": true,
+  "audio_b64": "base64-encoded 24kHz float32 WAV",
+  "error": null
+}
+```
+
+### Voice Cloning
+
+Custom voice synthesis via reference audio:
+
+1. **Reference audio**: WAV file (any sample rate, 5-30 seconds of clear speech)
+2. **Reference text**: Accurate transcription of reference audio content
+3. **Synthesis**: OmniVoice encodes reference audio and applies style to target text
+
+**Example** (Discord voice integration):
+```javascript
+// voices/cleetus.wav is reference recording
+const output = await synthesize(
+  'I am speaking in the Cleetus voice',
+  '/path/to/voices/cleetus.wav',
+  'reference speech'
+);
+// Returns 24kHz float32 Float32Array ready for Discord transmission
+```
+
+### Language Support
+
+OmniVoice supports 600+ languages via multilingual training. No special configuration required — language detected automatically from input text. Examples: English, Mandarin, Spanish, French, German, Japanese, Korean, Arabic, Hindi, and many others.
+
+### Subprocess Lifecycle
+
+- **First call**: Spawns Python process, loads model (~30s), caches in memory
+- **Subsequent calls**: Reuse same subprocess, ~3s per synthesis (model already loaded)
+- **Concurrent requests**: Queued internally; subprocess processes one at a time
+- **Timeouts**: 30s timeout per synthesis call; longer requests fail with clear error
+- **Cleanup**: shutdown() function kills subprocess and clears resources
+
+### Integration Points
+
+**Discord voice pipeline** (discord-voice-processor.js):
+- Transcribe user audio (Whisper STT) → Generate response → **Synthesize via OmniVoice** → Resample → Send to Discord
+- Voice reference: voices/cleetus.wav (set via setVoiceEmbedding())
+- Output: 24kHz float32 audio, resampled to Discord 48kHz for transmission
+
+**Web demo API** (/api/generate):
+- Accepts text input, synthesizes with OmniVoice, returns WAV for facial animation
+- Uses voice reference for consistent character voice
+
 ## Discord Bot Integration
 
 Diagen includes optional Discord bot support for text and voice interactions.

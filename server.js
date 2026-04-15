@@ -8,6 +8,7 @@ import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
 import { initDiscordBot, sendMessage as discordSendMessage, connectToVoiceChannel, disconnectFromVoiceChannel, getDebugState } from './discord-handler.js'
 import { setVoiceEmbedding } from './discord-voice-processor.js'
+import { synthesize as synthesizeOmniVoice } from './omnivoice-tts-bridge.js'
 import os from 'os'
 
 const require = createRequire(import.meta.url)
@@ -29,7 +30,6 @@ ort.InferenceSession.create = async function(modelPath, options = {}) {
   }
   return origOrtCreate(modelPath, patched)
 }
-const ttsOnnx = require('webtalk/server-tts-onnx')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -81,24 +81,8 @@ async function loadVoiceEmbedding() {
     console.warn('[voice] No voice file found at', CLEETUS_WAV)
     return null
   }
-  console.log('[voice] Encoding voice from', CLEETUS_WAV)
-  const wavBuffer = fs.readFileSync(CLEETUS_WAV)
-  const view = new DataView(wavBuffer.buffer, wavBuffer.byteOffset, wavBuffer.byteLength)
-  const sampleRate = view.getUint32(24, true)
-  const dataSize = view.getUint32(40, true)
-  const numSamples = dataSize / 2
-  const audioData = new Float32Array(numSamples)
-  for (let i = 0; i < numSamples; i++) {
-    const val = view.getInt16(44 + i * 2, true)
-    audioData[i] = val < 0 ? val / 0x8000 : val / 0x7FFF
-  }
-  let resampledData = audioData
-  if (sampleRate !== SAMPLE_RATE) {
-    resampledData = resampleAudio(audioData, sampleRate, SAMPLE_RATE)
-  }
-  await ttsOnnx.loadModels(TTS_MODELS_DIR)
-  voiceEmbedding = await ttsOnnx.encodeVoiceAudio(resampledData)
-  console.log('[voice] Voice encoded, shape:', voiceEmbedding.shape)
+  console.log('[voice] Voice reference loaded:', CLEETUS_WAV)
+  voiceEmbedding = CLEETUS_WAV
   return voiceEmbedding
 }
 app.post('/api/generate', async (req, res) => {
@@ -110,7 +94,7 @@ app.post('/api/generate', async (req, res) => {
     if (!voiceEmb) return res.status(500).json({ error: 'Voice embedding not available' })
     const startTime = performance.now()
 
-    const audioFloat = await ttsOnnx.synthesize(text, voiceEmb, TTS_MODELS_DIR)
+    const audioFloat = await synthesizeOmniVoice(text, voiceEmb, 'reference speech')
     const [audioWav, audio16k] = await Promise.all([
       Promise.resolve(encodeWAV(audioFloat, SAMPLE_RATE)),
       Promise.resolve(resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE))
@@ -231,11 +215,8 @@ async function start() {
   await loadA2F()
   await loadVoiceEmbedding()
 
-  // Make voice embedding available to Discord voice processor
-  if (voiceEmbedding) {
-    setVoiceEmbedding(voiceEmbedding)
-    console.log('[server] Voice embedding loaded for Discord processor')
-  }
+  setVoiceEmbedding(CLEETUS_WAV)
+  console.log('[server] Voice reference path set for Discord processor')
 
   // Initialize Discord bot
   const onCommand = async (userId, prompt) => {
