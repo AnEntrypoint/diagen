@@ -163,7 +163,32 @@ currentChannelState = { guildId: null, channelId: null }
 **API Functions**:
 - `handleJoinCommand(guildId, channelId)` — async function to store channel state and connect
 - `getCurrentChannelState()` — getter returning copy of stored channel state
-- Observable via `getDebugState()` endpoint which exposes guildId and channelId
+- `getDebugState()` — getter returning debug state object (see Observability below)
+
+### Observability
+
+**Debug Endpoint**: `GET /debug/discord`
+
+Returns real-time Discord bot state as JSON:
+```json
+{
+  "connected": boolean,
+  "guildId": string | null,
+  "channelId": string | null,
+  "lastError": string | null,
+  "messageCount": number,
+  "processingQueue": array
+}
+```
+
+This permanent, queryable endpoint provides complete visibility into:
+- Connection status (whether bot is logged into Discord)
+- Current voice channel selection (guild and channel IDs)
+- Last error encountered (if any)
+- Message count for monitoring activity
+- Active processing queue for debugging
+
+Query via curl or monitoring tools: `curl http://localhost:8080/debug/discord`
 
 ### Dependencies
 
