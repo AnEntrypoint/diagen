@@ -6,7 +6,7 @@ import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
-import { initDiscordBot, sendMessage as discordSendMessage, connectToVoiceChannel, disconnectFromVoiceChannel } from './discord-handler.js'
+import { initDiscordBot, sendMessage as discordSendMessage, connectToVoiceChannel, disconnectFromVoiceChannel, getDebugState } from './discord-handler.js'
 import os from 'os'
 
 const require = createRequire(import.meta.url)
@@ -214,6 +214,17 @@ app.post('/api/discord/message', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+app.get('/debug/discord', (req, res) => {
+  try {
+    const state = getDebugState()
+    res.json(state)
+  } catch (err) {
+    console.error('[api] Debug discord error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 async function start() {
   await ensureModels()
   await loadA2F()
