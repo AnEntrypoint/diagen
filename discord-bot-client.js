@@ -87,31 +87,20 @@ async function joinDiscordVoice(client, guildId, channelId) {
 
   _destroyExisting(guildId)
 
-  console.log('[discord] sending voice leave to clear stale session...')
-  try {
-    for (const shard of client.ws.shards.values()) {
-      shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
-    }
-  } catch (e) {
-    console.log('[discord] leave send error (non-fatal):', e.message)
-  }
-  await new Promise(r => {
-    const botId = client.user?.id
-    const onVoiceState = (oldState, newState) => {
-      if (newState.guild?.id === guildId && newState.channelId === null && (!botId || newState.member?.user?.id === botId || newState.member?.id === botId)) {
-        client.off('voiceStateUpdate', onVoiceState)
-        clearTimeout(timer)
-        console.log('[discord] voice leave confirmed by Discord')
-        r()
+  // Skip voice leave clear on first attempt to avoid stale session errors
+  // Only send voice leave if we detect we're actually in a voice channel
+  const currentChannel = client.guilds.cache.get(guildId)?.members.cache.get(client.user?.id)?.voice?.channelId
+  if (currentChannel) {
+    console.log('[discord] Clearing stale voice session...')
+    try {
+      for (const shard of client.ws.shards.values()) {
+        shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
       }
+    } catch (e) {
+      console.log('[discord] voice leave error (non-fatal):', e.message)
     }
-    const timer = setTimeout(() => {
-      client.off('voiceStateUpdate', onVoiceState)
-      console.log('[discord] voice leave not confirmed, proceeding after timeout')
-      r()
-    }, 5000)
-    client.on('voiceStateUpdate', onVoiceState)
-  })
+    await new Promise(r => setTimeout(r, 2000))
+  }
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     try {
@@ -126,17 +115,20 @@ async function joinDiscordVoice(client, guildId, channelId) {
     } catch (err) {
       console.log(`[discord] attempt ${attempt} failed: ${err.message}, closeCode=${err.closeCode}`)
       _destroyExisting(guildId)
-      const delay = err.closeCode === 4017 ? 10000 : err.closeCode === 4006 ? 8000 : 4000
-      console.log(`[discord] waiting ${delay}ms before retry...`)
+
+      // Exponential backoff: 4017 needs longer wait (session timeout), 4006 is stale, others are transient
+      const delay = err.closeCode === 4017 ? 12000 : err.closeCode === 4006 ? 10000 : 5000
+      console.log(`[discord] waiting ${delay}ms before retry (attempt ${attempt}/8)...`)
       await new Promise(r => setTimeout(r, delay))
+
       if (err.closeCode === 4006) {
-        console.log('[discord] 4006: stale session — ensure no other instance is using this bot token in voice. Re-sending leave...')
+        console.log('[discord] 4006: stale session — clearing and retrying...')
         try {
           for (const shard of client.ws.shards.values()) {
             shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
           }
         } catch (e) { console.log('[discord] leave send error:', e.message) }
-        await new Promise(r => setTimeout(r, 2000))
+        await new Promise(r => setTimeout(r, 3000))
       }
     }
   }
