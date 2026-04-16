@@ -7,6 +7,7 @@ import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
 import { synthesize as synthesizeOmniVoice } from './omnivoice-tts-bridge.js'
+import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-ollama.js'
 import os from 'os'
 
 let initDiscordBot = null
@@ -166,6 +167,20 @@ async function ensureModels() {
   await downloadModels()
 }
 
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { prompt, system } = req.body
+    if (!prompt) return res.status(400).json({ error: 'prompt required' })
+    const available = await isLLMAvailable()
+    if (!available) return res.status(503).json({ error: 'LLM not available (Ollama not running or model not pulled)' })
+    const response = await generateLLM(prompt, system)
+    res.json({ response })
+  } catch (err) {
+    console.error('[llm] error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // Discord API endpoints
 app.post('/api/discord/voice/connect', async (req, res) => {
   if (!connectToVoiceChannel) return res.status(503).json({ error: 'Discord not enabled' })
@@ -242,7 +257,9 @@ async function start() {
 
       // Initialize Discord bot
       const onCommand = async (userId, prompt) => {
-        return `Received: ${prompt}`
+        const available = await isLLMAvailable()
+        if (!available) return `[LLM offline] Received: ${prompt}`
+        return generateLLM(prompt)
       }
       const onUserAudio = (userId, pcmChunk) => {
         console.log(`[discord] Audio chunk from user ${userId}, ${pcmChunk.length} samples`)
