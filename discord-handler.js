@@ -1,8 +1,7 @@
 import { ChannelType } from 'discord.js'
-import { joinDiscordVoice } from 'dispipe'
-import { createClient, subscribeToSpeaker, leaveVoice } from './discord-bot-client.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './discord-bot-client.js'
 import { processUserAudio } from './discord-voice-processor.js'
-import { initVoicePlayer, pushAudioFrame } from 'dispipe/voice'
+import { initVoicePlayer, pushAudioFrame } from './discord-voice-player.js'
 
 let discordClient = null
 let isConnected = false
