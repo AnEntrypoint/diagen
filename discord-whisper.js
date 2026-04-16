@@ -1,4 +1,4 @@
-import { AutoProcessor, AutoModelForSpeechSeq2Seq, pipeline } from '@xenova/transformers';
+import { pipeline } from '@xenova/transformers/src/transformers.js';
 
 let whisperPipeline = null;
 let pipelineInitPromise = null;
