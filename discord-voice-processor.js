@@ -1,6 +1,7 @@
 import { transcribe } from './discord-whisper.js'
 import { resampleAudio } from './server-utils.mjs'
 import { synthesize } from './omnivoice-tts-bridge.js'
+import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-ollama.js'
 
 const SAMPLE_RATE_DISCORD = 48000
 const SAMPLE_RATE_TTS = 24000
@@ -11,15 +12,15 @@ export function setVoiceEmbedding(refAudioPath) {
   voiceReferencePath = refAudioPath
 }
 
-function generateResponse(text, userId) {
+async function generateResponse(text, userId) {
   if (!text || text === '[no speech detected]') {
     return "I didn't catch that. Could you speak again?"
   }
 
-  const response = `You said: "${text.slice(0, 100)}". ${
-    text.length > 100 ? 'Processing...' : ''
-  }`
-  return response
+  const available = await isLLMAvailable()
+  if (!available) return `You said: "${text.slice(0, 100)}"`
+
+  return generateLLM(text)
 }
 
 function float32ToInt16PCM(float32Data) {
