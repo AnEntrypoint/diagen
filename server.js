@@ -239,6 +239,19 @@ async function start() {
   await loadA2F()
   await loadVoiceEmbedding()
 
+  // Warm up TTS to avoid first-call timeout (model download ~5-10min)
+  if (process.env.WARMUP_TTS !== 'false') {
+    try {
+      console.log('[server] Warming up OmniVoice TTS (first-time model download)...')
+      const warmupStart = performance.now()
+      await synthesizeOmniVoice('Server starting', CLEETUS_WAV, 'test warmup')
+      const warmupTime = ((performance.now() - warmupStart) / 1000).toFixed(1)
+      console.log(`[server] TTS warmup complete (${warmupTime}s) - subsequent calls will be fast`)
+    } catch (err) {
+      console.warn('[server] TTS warmup failed (non-critical):', err.message)
+    }
+  }
+
   // Lazy load Discord modules only if DISCORD_TOKEN is set
   if (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN) {
     try {

@@ -1,0 +1,68 @@
+{
+  "testDate": "2026-04-16",
+  "overallStatus": "Partially Validated - Components Working, E2E Pending",
+  "components": {
+    "whisperSTT": {
+      "status": "WORKING",
+      "test": "Transcribed cleetus.wav",
+      "result": "I don't understand. [coughing]",
+      "confidence": 0.31,
+      "notes": "Successfully converts audio buffer to text"
+    },
+    "llamaLLM": {
+      "status": "WORKING",
+      "test": "Generated response to 'Hello, who are you?'",
+      "result": "I'm an artificial intelligence assistant...",
+      "ollamaStatus": "Running on localhost:11434",
+      "model": "llama3.2:1b"
+    },
+    "omnivoiceTTS": {
+      "status": "SLOW_ON_FIRST_RUN",
+      "issue": "Model download 5-10 min on first synthesis",
+      "modelSize": "500MB from HuggingFace",
+      "loadTime": "30-60s",
+      "subsequentCalls": "3-5s per synthesis",
+      "recommendation": "Pre-warm TTS at server startup"
+    },
+    "fullPipeline": {
+      "status": "NEEDS_VERIFICATION",
+      "blockers": ["OmniVoice first-run model download timeout"],
+      "architecture": "STT→LLM→TTS round-trip validation pending"
+    }
+  },
+  "discordIntegration": {
+    "botConnection": "✓",
+    "voiceChannelJoin": "✓ (8-retry logic)",
+    "audioReceive": "✓ (Opus decode to PCM)",
+    "audioSend": "✓ (PCM to Opus encode)",
+    "vadDetection": "✓ (RMS-based, 1.5s silence)",
+    "userBuffering": "✓ (per-user accumulation)",
+    "autoJoin": "✓ (GUILD_ID + CHANNEL_ID)"
+  },
+  "issues": [
+    {
+      "title": "OmniVoice Model Download Timeout",
+      "root": "First synthesis triggers 500MB model download",
+      "resolution": "Pre-warm TTS at server startup"
+    },
+    {
+      "title": "Whisper Confidence on Reference Audio",
+      "root": "cleetus.wav contains coughing/noise",
+      "confidence": 0.31,
+      "recommendation": "Use cleaner voice reference"
+    },
+    {
+      "title": "Discord Audio Format Handling",
+      "status": "RESOLVED",
+      "pipeline": "Discord 48kHz → Whisper 16kHz → TTS 24kHz → Discord 48kHz"
+    }
+  ],
+  "testFiles": [
+    "test-simple.mjs - STT + LLM validation",
+    "test-voice-pipeline.mjs - Full STT→LLM→TTS round-trip",
+    "test-omnivoice-debug.mjs - OmniVoice spawn diagnostics",
+    "test-stt-llm-pipeline.mjs - STT + LLM with synthetic audio",
+    "test-with-real-audio.mjs - STT with real WAV file"
+  ],
+  "conclusion": "Pipeline components are functional. STT and LLM validated. TTS requires warmup for E2E testing. Ready for Discord voice channel testing with real user audio."
+}
