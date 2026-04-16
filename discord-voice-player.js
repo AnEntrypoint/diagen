@@ -45,21 +45,14 @@ function initVoicePlayer(connection) {
   })
 
   connection.subscribe(audioPlayer)
-  console.log('[voice] player ready (audio stream will start on first push)')
+
+  const resource = _makeStream()
+  audioPlayer.play(resource)
+  console.log('[voice] player started')
 }
 
 function pushAudioFrame(f32Buffer) {
-  // Lazily initialize audio stream on first push
-  if (!pcmInput || pcmInput.destroyed) {
-    if (!audioPlayer) {
-      console.error('[voice] pushAudioFrame: audioPlayer not initialized')
-      return
-    }
-    const resource = _makeStream()
-    audioPlayer.play(resource)
-    console.log('[voice] audio stream started on first frame push')
-  }
-
+  if (!pcmInput || pcmInput.destroyed) return
   const f32 = f32Buffer instanceof Float32Array ? f32Buffer : new Float32Array(f32Buffer)
   const s16 = new Int16Array(f32.length)
   for (let i = 0; i < f32.length; i++) {

@@ -52,7 +52,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
       console.log(`[processor] userId=${userId} transcription confidence very low: ${transcription.confidence}`)
     }
 
-    const responseText = generateResponse(transcription.text, userId)
+    const responseText = await generateResponse(transcription.text, userId)
 
     if (!voiceReferencePath) {
       throw new Error(`step=voiceRef userId=${userId}: voice reference not set`)
