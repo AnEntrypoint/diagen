@@ -10,6 +10,22 @@ import { synthesize as synthesizeOmniVoice } from './omnivoice-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-ollama.js'
 import os from 'os'
 
+// Load environment variables from .env
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const envPath = path.join(__dirname, '.env')
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8')
+  envContent.split('\n').forEach(line => {
+    const [key, ...valueParts] = line.split('=')
+    if (key && !key.startsWith('#') && valueParts.length > 0) {
+      const value = valueParts.join('=').trim()
+      if (!process.env[key.trim()]) {
+        process.env[key.trim()] = value
+      }
+    }
+  })
+}
+
 let initDiscordBot = null
 let sendMessage = null
 let connectToVoiceChannel = null
@@ -37,7 +53,6 @@ ort.InferenceSession.create = async function(modelPath, options = {}) {
   return origOrtCreate(modelPath, patched)
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const port = process.env.PORT || 8080
 app.use(express.json({ limit: '50mb' }))
@@ -278,15 +293,20 @@ async function start() {
       await initDiscordBot(onUserAudio, onCommand)
 
       // Auto-join voice channel if GUILD_ID and CHANNEL_ID are set
+      // Note: This requires the bot to be invited to the voice channel in Discord first
       const autoGuild = process.env.GUILD_ID
       const autoChannel = process.env.CHANNEL_ID
       if (autoGuild && autoChannel) {
         setTimeout(async () => {
           try {
             await connectToVoiceChannel(autoGuild, autoChannel)
-            console.log(`[server] Auto-joined voice channel ${autoChannel}`)
+            console.log(`[server] ✓ Auto-joined voice channel ${autoChannel}`)
           } catch (err) {
-            console.error('[server] Auto-join voice failed:', err.message)
+            console.error('[server] ⚠ Auto-join failed (requires manual invite in Discord):', err.message)
+            console.log('[server] To manually connect, use:')
+            console.log(`[server]   curl -X POST http://localhost:8080/api/discord/voice/connect \\`)
+            console.log(`[server]     -H "Content-Type: application/json" \\`)
+            console.log(`[server]     -d '{"guildId":"${autoGuild}","channelId":"${autoChannel}"}' `)
           }
         }, 3000)
       }
