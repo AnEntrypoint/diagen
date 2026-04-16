@@ -33,6 +33,7 @@ async function _tryJoin(channel, guild, attempt) {
     selfDeaf: false,
     selfMute: false,
     debug: true,
+    daveEncryption: false,
   })
   console.log(`[discord] joinVoiceChannel called, waiting for Ready state...`)
 
@@ -73,6 +74,47 @@ async function _tryJoin(channel, guild, attempt) {
   }
 }
 
+async function _sendLeaveAndWait(client, guildId, waitMs = 8000) {
+  const botId = client.user?.id
+  _destroyExisting(guildId)
+  try {
+    for (const shard of client.ws.shards.values()) {
+      shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
+    }
+  } catch (e) { console.log('[discord] leave send error:', e.message) }
+
+  await new Promise(r => {
+    const onVoiceState = (oldState, newState) => {
+      const memberId = newState.member?.user?.id ?? newState.member?.id
+      if (newState.guild?.id === guildId && newState.channelId === null && (!botId || memberId === botId)) {
+        client.off('voiceStateUpdate', onVoiceState)
+        clearTimeout(timer)
+        console.log('[discord] voice leave confirmed')
+        r()
+      }
+    }
+    const timer = setTimeout(() => {
+      client.off('voiceStateUpdate', onVoiceState)
+      console.log('[discord] voice leave timed out, proceeding')
+      r()
+    }, waitMs)
+    client.on('voiceStateUpdate', onVoiceState)
+  })
+}
+
+async function _reconnectShard(client) {
+  console.log('[discord] forcing gateway reconnect to get fresh session_id...')
+  for (const shard of client.ws.shards.values()) {
+    try { shard.destroy({ recover: 2 }) } catch {}
+  }
+  await new Promise(r => {
+    const onReady = () => { client.off('ready', onReady); r() }
+    client.once('ready', onReady)
+    setTimeout(r, 15000)
+  })
+  console.log('[discord] gateway reconnect complete')
+}
+
 async function joinDiscordVoice(client, guildId, channelId) {
   let guild = client.guilds.cache.get(guildId)
   if (!guild) guild = await client.guilds.fetch(guildId)
@@ -85,74 +127,39 @@ async function joinDiscordVoice(client, guildId, channelId) {
   }
   if (!channel) throw new Error(`Channel ${channelId} not found`)
 
-  _destroyExisting(guildId)
+  const me = guild.members.cache.get(client.user.id) || await guild.members.fetch(client.user.id)
+  const perms = channel.permissionsFor(me)
+  if (perms && !perms.has('Connect')) throw new Error(`Bot lacks CONNECT permission in channel ${channelId}`)
+  if (perms && !perms.has('Speak')) console.warn('[discord] warning: bot may lack SPEAK permission')
+  console.log(`[discord] permissions ok: Connect=${perms?.has('Connect')}, Speak=${perms?.has('Speak')}`)
 
-  console.log('[discord] sending voice leave to clear stale session...')
-  try {
-    for (const shard of client.ws.shards.values()) {
-      shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
-    }
-  } catch (e) {
-    console.log('[discord] leave send error (non-fatal):', e.message)
-  }
-  await new Promise(r => {
-    const botId = client.user?.id
-    const onVoiceState = (oldState, newState) => {
-      if (newState.guild?.id === guildId && newState.channelId === null && (!botId || newState.member?.user?.id === botId || newState.member?.id === botId)) {
-        client.off('voiceStateUpdate', onVoiceState)
-        clearTimeout(timer)
-        console.log('[discord] voice leave confirmed by Discord')
-        r()
-      }
-    }
-    const timer = setTimeout(() => {
-      client.off('voiceStateUpdate', onVoiceState)
-      console.log('[discord] voice leave not confirmed, proceeding after timeout')
-      r()
-    }, 5000)
-    client.on('voiceStateUpdate', onVoiceState)
-  })
+  await _sendLeaveAndWait(client, guildId, 8000)
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     try {
       voiceConnection = await _tryJoin(channel, guild, attempt)
       voiceReceiver = voiceConnection.receiver
-
       voiceConnection.on(VoiceConnectionStatus.Disconnected, () => {
-        console.log('[discord] voice disconnected, voice.js will attempt rejoin')
+        console.log('[discord] voice disconnected')
       })
-
       console.log('[discord] ✓ Voice connection successful!')
       return { voiceConnection, voiceReceiver }
     } catch (err) {
       console.log(`[discord] attempt ${attempt} failed: ${err.message}, closeCode=${err.closeCode}`)
-      _destroyExisting(guildId)
-
-      // Fail fast on 4017 - this is a permanent auth issue
-      if (err.closeCode === 4017) {
-        throw new Error(`Discord rejected voice connection (error 4017: Invalid Guild). ` +
-          `This means: bot is not invited to the server, lacks voice permissions, ` +
-          `or the voice channel doesn't exist. Verify bot permissions in Discord.`)
-      }
-
-      const delay = err.closeCode === 4006 ? 8000 : 4000
-      if (attempt < 3) {
-        console.log(`[discord] waiting ${delay}ms before retry (attempt ${attempt}/3)...`)
-        await new Promise(r => setTimeout(r, delay))
-        if (err.closeCode === 4006) {
-          console.log('[discord] 4006: stale session — clearing and retrying...')
-          try {
-            for (const shard of client.ws.shards.values()) {
-              shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
-            }
-          } catch (e) { console.log('[discord] leave send error:', e.message) }
-          await new Promise(r => setTimeout(r, 2000))
-        }
+      if (err.closeCode === 4017 && attempt % 3 === 0) {
+        console.log('[discord] 4017 persists — forcing gateway reconnect for fresh session_id')
+        await _sendLeaveAndWait(client, guildId, 2000)
+        await _reconnectShard(client)
+        guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
+        channel = guild.channels.cache.get(channelId)
+        if (!channel) { await guild.channels.fetch(); channel = guild.channels.cache.get(channelId) }
+      } else {
+        const delay = Math.min(5000 * attempt, 60000)
+        console.log(`[discord] resetting session and retrying in ${delay}ms...`)
+        await _sendLeaveAndWait(client, guildId, delay)
       }
     }
   }
-
-  throw new Error('Voice connection failed after 3 attempts')
 }
 
 function subscribeToSpeaker(userId, onPcmChunk) {
