@@ -1,15 +1,9 @@
 import { Client, GatewayIntentBits } from 'discord.js'
-import { joinVoiceChannel, EndBehaviorType, VoiceConnectionStatus, entersState, getVoiceConnection, createAudioResource, StreamType } from '@discordjs/voice'
+import { joinVoiceChannel, EndBehaviorType, VoiceConnectionStatus, entersState, getVoiceConnection } from '@discordjs/voice'
 import prism from 'prism-media'
-import { resampleAudio } from './server-utils.mjs'
-import { Readable } from 'stream'
 
 let voiceConnection = null
 let voiceReceiver = null
-let audioSendQueue = []
-let totalAudioFramesSent = 0
-let lastSendTimestamp = null
-let lastSendError = null
 
 function createClient() {
   return new Client({
@@ -87,20 +81,31 @@ async function joinDiscordVoice(client, guildId, channelId) {
 
   _destroyExisting(guildId)
 
-  // Skip voice leave clear on first attempt to avoid stale session errors
-  // Only send voice leave if we detect we're actually in a voice channel
-  const currentChannel = client.guilds.cache.get(guildId)?.members.cache.get(client.user?.id)?.voice?.channelId
-  if (currentChannel) {
-    console.log('[discord] Clearing stale voice session...')
-    try {
-      for (const shard of client.ws.shards.values()) {
-        shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
-      }
-    } catch (e) {
-      console.log('[discord] voice leave error (non-fatal):', e.message)
+  console.log('[discord] sending voice leave to clear stale session...')
+  try {
+    for (const shard of client.ws.shards.values()) {
+      shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
     }
-    await new Promise(r => setTimeout(r, 2000))
+  } catch (e) {
+    console.log('[discord] leave send error (non-fatal):', e.message)
   }
+  await new Promise(r => {
+    const botId = client.user?.id
+    const onVoiceState = (oldState, newState) => {
+      if (newState.guild?.id === guildId && newState.channelId === null && (!botId || newState.member?.user?.id === botId || newState.member?.id === botId)) {
+        client.off('voiceStateUpdate', onVoiceState)
+        clearTimeout(timer)
+        console.log('[discord] voice leave confirmed by Discord')
+        r()
+      }
+    }
+    const timer = setTimeout(() => {
+      client.off('voiceStateUpdate', onVoiceState)
+      console.log('[discord] voice leave not confirmed, proceeding after timeout')
+      r()
+    }, 5000)
+    client.on('voiceStateUpdate', onVoiceState)
+  })
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     try {
@@ -108,27 +113,24 @@ async function joinDiscordVoice(client, guildId, channelId) {
       voiceReceiver = voiceConnection.receiver
 
       voiceConnection.on(VoiceConnectionStatus.Disconnected, () => {
-        console.log('[discord] voice disconnected')
+        console.log('[discord] voice disconnected, voice.js will attempt rejoin')
       })
 
       return { voiceConnection, voiceReceiver }
     } catch (err) {
       console.log(`[discord] attempt ${attempt} failed: ${err.message}, closeCode=${err.closeCode}`)
       _destroyExisting(guildId)
-
-      // Exponential backoff: 4017 needs longer wait (session timeout), 4006 is stale, others are transient
-      const delay = err.closeCode === 4017 ? 12000 : err.closeCode === 4006 ? 10000 : 5000
-      console.log(`[discord] waiting ${delay}ms before retry (attempt ${attempt}/8)...`)
+      const delay = err.closeCode === 4017 ? 10000 : err.closeCode === 4006 ? 8000 : 4000
+      console.log(`[discord] waiting ${delay}ms before retry...`)
       await new Promise(r => setTimeout(r, delay))
-
       if (err.closeCode === 4006) {
-        console.log('[discord] 4006: stale session — clearing and retrying...')
+        console.log('[discord] 4006: stale session — ensure no other instance is using this bot token in voice. Re-sending leave...')
         try {
           for (const shard of client.ws.shards.values()) {
             shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
           }
         } catch (e) { console.log('[discord] leave send error:', e.message) }
-        await new Promise(r => setTimeout(r, 3000))
+        await new Promise(r => setTimeout(r, 2000))
       }
     }
   }
@@ -170,144 +172,4 @@ function leaveVoice() {
   }
 }
 
-/**
- * Normalize PCM audio to 48kHz Float32Array
- *
- * PCM Format Support:
- * - Float32Array: values in [-1.0, 1.0] range
- * - Int16Array: values in [-32768, 32767] range (auto-normalized to [-1, 1])
- * - Buffer: interpreted as Int16 little-endian PCM (2 bytes per sample)
- *
- * Mono input is preserved as-is. Stereo/multi-channel input converted to mono.
- * Sample rate is resampled to exactly 48kHz via linear interpolation.
- *
- * @param {Buffer|Float32Array|Int16Array} buffer - Input PCM buffer
- * @param {number} inputSampleRate - Sample rate of input (e.g., 24000, 48000)
- * @returns {Float32Array} Audio resampled to 48kHz, normalized to [-1, 1]
- * @throws {Error} If buffer format is unrecognized or length is invalid
- */
-function normalizePcmTo48k(buffer, inputSampleRate) {
-  if (!buffer || buffer.length === 0) return new Float32Array(0)
-
-  let float32;
-
-  // Convert to Float32Array if needed
-  if (buffer instanceof Float32Array) {
-    float32 = buffer;
-  } else if (buffer instanceof Int16Array) {
-    float32 = new Float32Array(buffer.length);
-    for (let i = 0; i < buffer.length; i++) {
-      float32[i] = buffer[i] / 32768;
-    }
-  } else if (Buffer.isBuffer(buffer)) {
-    // Interpret as Int16 little-endian
-    const int16 = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.length / 2);
-    float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-      float32[i] = int16[i] / 32768;
-    }
-  } else {
-    throw new Error(`Unrecognized PCM format: expected Buffer, Float32Array, or Int16Array, got ${buffer.constructor.name}`);
-  }
-
-  // Resample to 48kHz if needed
-  if (inputSampleRate === 48000) return float32;
-  return resampleAudio(float32, inputSampleRate, 48000);
-}
-
-/**
- * Send audio to Discord voice connection
- * Encodes PCM as Opus (if available) or sends as raw PCM, plays via voice connection player
- * @param {Buffer|Float32Array|Int16Array} pcmBuffer - Input PCM audio
- * @param {number} sampleRate - Sample rate of input audio (e.g., 24000, 48000)
- * @returns {Promise<void>} Resolves when audio is queued to play
- * @throws {Error} If voice connection not active or encoding fails
- *
- * PCM Format Expectations:
- * - Input: Float32Array [-1.0, 1.0], Int16Array, or Buffer (interpreted as Int16 LE)
- * - Sample Rate: any valid rate (will resample to 48kHz)
- * - Channels: mono (will be sent as stereo to Discord)
- * - Output: 48kHz, 16-bit PCM (via discord.js voice subsystem)
- */
-async function sendAudioToDiscord(pcmBuffer, sampleRate) {
-  if (!voiceConnection) throw new Error('[discord] Voice connection not active (null)');
-  if (voiceConnection.state.status !== VoiceConnectionStatus.Ready) {
-    throw new Error(`[discord] Voice connection not ready: status=${voiceConnection.state.status}`);
-  }
-  if (!voiceConnection.state.subscription) {
-    throw new Error('[discord] Voice connection has no subscription/player');
-  }
-
-  try {
-    // Normalize to 48kHz Float32
-    const normalized = normalizePcmTo48k(pcmBuffer, sampleRate);
-    if (normalized.length === 0) throw new Error('Normalized audio is empty');
-
-    // Convert Float32 to Int16 for Discord
-    const int16 = new Int16Array(normalized.length);
-    for (let i = 0; i < normalized.length; i++) {
-      const val = Math.max(-1, Math.min(1, normalized[i]));
-      int16[i] = val < 0 ? val * 0x8000 : val * 0x7FFF;
-    }
-
-    let resource;
-    const pcmBuf = Buffer.from(int16);
-
-    // Try to use Opus encoder if available, fall back to Raw PCM
-    try {
-      const encoder = new prism.opus.Encoder({
-        rate: 48000,
-        channels: 2,
-        frameSize: 960
-      });
-
-      const pcmStream = Readable.from([pcmBuf]);
-      const opusStream = pcmStream.pipe(encoder);
-
-      resource = createAudioResource(opusStream, {
-        inputType: StreamType.Opus,
-        inlineVolume: true
-      });
-
-      console.log('[discord] Using Opus encoding for audio');
-    } catch (opusErr) {
-      // Fallback to Raw PCM if Opus encoder unavailable
-      console.log('[discord] Opus encoder unavailable, using raw PCM:', opusErr.message?.slice(0, 50));
-
-      const pcmStream = Readable.from([pcmBuf]);
-      resource = createAudioResource(pcmStream, {
-        inputType: StreamType.Raw,
-        inlineVolume: true
-      });
-    }
-
-    // Play the audio
-    voiceConnection.state.subscription.player.play(resource);
-
-    // Update metrics
-    audioSendQueue.push({ timestamp: Date.now(), bytes: normalized.length * 2 });
-    if (audioSendQueue.length > 100) audioSendQueue.shift();
-    totalAudioFramesSent += normalized.length;
-    lastSendTimestamp = Date.now();
-    lastSendError = null;
-
-  } catch (err) {
-    lastSendError = { message: err.message, timestamp: Date.now() };
-    throw Object.assign(new Error(`[discord] Failed to send audio: ${err.message}`), { originalError: err });
-  }
-}
-
-/**
- * Get audio send metrics and queue state
- */
-function getAudioDebugState() {
-  return {
-    audioQueueLength: audioSendQueue.length,
-    totalAudioFramesSent,
-    lastSendTimestamp,
-    lastSendError,
-    queueHistory: audioSendQueue.slice(-10)
-  };
-}
-
-export { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice, sendAudioToDiscord, normalizePcmTo48k, getAudioDebugState }
+export { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice }
