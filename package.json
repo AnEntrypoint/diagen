@@ -21,6 +21,7 @@
     "@xenova/transformers": "^2.6.5",
     "audio2afan": "^1.0.1",
     "discord.js": "^14.14.1",
+    "dispipe": "^1.0.1",
     "express": "^5.2.1",
     "jszip": "^3.10.1",
     "onnxruntime-node": "^1.24.1",

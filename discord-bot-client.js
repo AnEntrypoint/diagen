@@ -189,4 +189,4 @@ function leaveVoice() {
   }
 }
 
-export { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice }
+export { createClient, subscribeToSpeaker, leaveVoice }
