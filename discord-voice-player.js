@@ -51,15 +51,22 @@ function initVoicePlayer(connection) {
   console.log('[voice] player started')
 }
 
-function pushAudioFrame(f32Buffer) {
+function pushAudioFrame(monoBuffer) {
   if (!pcmInput || pcmInput.destroyed) return
-  const f32 = f32Buffer instanceof Float32Array ? f32Buffer : new Float32Array(f32Buffer)
-  const s16 = new Int16Array(f32.length)
-  for (let i = 0; i < f32.length; i++) {
-    const clamped = Math.max(-1, Math.min(1, f32[i]))
-    s16[i] = clamped < 0 ? clamped * 32768 : clamped * 32767
+  const src = monoBuffer instanceof Float32Array ? monoBuffer : (() => {
+    const i16 = new Int16Array(monoBuffer.buffer || monoBuffer, monoBuffer.byteOffset || 0, (monoBuffer.byteLength || monoBuffer.length) / 2)
+    const f = new Float32Array(i16.length)
+    for (let i = 0; i < i16.length; i++) f[i] = i16[i] / 32768
+    return f
+  })()
+  const stereo = new Int16Array(src.length * 2)
+  for (let i = 0; i < src.length; i++) {
+    const s = Math.max(-1, Math.min(1, src[i]))
+    const v = s < 0 ? s * 32768 : s * 32767
+    stereo[i * 2] = v
+    stereo[i * 2 + 1] = v
   }
-  const s16Buf = Buffer.from(s16.buffer, s16.byteOffset, s16.byteLength)
+  const s16Buf = Buffer.from(stereo.buffer, stereo.byteOffset, stereo.byteLength)
   if (_accumBuf.length === 0 && s16Buf.length >= FRAME) {
     let off = 0
     while (off + FRAME <= s16Buf.length) { pcmInput.write(s16Buf.subarray(off, off + FRAME)); off += FRAME; _pushCount++ }
@@ -72,7 +79,7 @@ function pushAudioFrame(f32Buffer) {
     _accumBuf = _accumBuf.subarray(FRAME)
     _pushCount++
     if (_pushCount <= 5 || _pushCount % 500 === 0) {
-      let peak = 0; for (let i = 0; i < f32.length; i++) { const v = Math.abs(f32[i]); if (v > peak) peak = v }
+      let peak = 0; for (let i = 0; i < src.length; i++) { const v = Math.abs(src[i]); if (v > peak) peak = v }
       console.log(`[voice] push #${_pushCount}, bytes=${FRAME}, peak=${peak.toFixed(4)}, player=${audioPlayer?.state?.status}`)
     }
   }

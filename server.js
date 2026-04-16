@@ -32,6 +32,7 @@ let connectToVoiceChannel = null
 let disconnectFromVoiceChannel = null
 let getDebugState = null
 let setVoiceEmbedding = null
+let getDiscordClient = null
 
 const require = createRequire(import.meta.url)
 const ORT_CPUS = os.cpus().length
@@ -252,6 +253,37 @@ app.get('/debug/discord', (req, res) => {
   }
 })
 
+app.get('/debug/guild/:guildId/channel/:channelId', async (req, res) => {
+  try {
+    const { guildId, channelId } = req.params
+    if (!getDiscordClient) return res.status(503).json({ error: 'Discord not initialized' })
+
+    const client = getDiscordClient()
+    if (!client) return res.status(503).json({ error: 'Discord client not available' })
+
+    const guild = await client.guilds.fetch(guildId)
+    const channel = await guild.channels.fetch(channelId)
+    const botMember = await guild.members.fetchMe()
+
+    const voicePermissions = channel.permissionsFor(botMember)
+
+    res.json({
+      guild: { id: guild.id, name: guild.name },
+      channel: { id: channel.id, name: channel.name, type: channel.type },
+      botMember: { id: botMember.id, nickname: botMember.nickname, roles: botMember.roles.cache.map(r => r.name) },
+      voicePermissions: {
+        connect: voicePermissions.has('Connect'),
+        speak: voicePermissions.has('Speak'),
+        useVoiceActivity: voicePermissions.has('UseVoiceActivity'),
+        all: voicePermissions.toArray()
+      }
+    })
+  } catch (err) {
+    console.error('[api] Guild/channel debug error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 async function start() {
   await ensureModels()
   await loadA2F()
@@ -281,6 +313,7 @@ async function start() {
       connectToVoiceChannel = discordHandler.connectToVoiceChannel
       disconnectFromVoiceChannel = discordHandler.disconnectFromVoiceChannel
       getDebugState = discordHandler.getDebugState
+      getDiscordClient = discordHandler.getDiscordClient
       setVoiceEmbedding = discordProcessor.setVoiceEmbedding
 
       setVoiceEmbedding(CLEETUS_WAV)
@@ -293,26 +326,19 @@ async function start() {
         return generateLLM(prompt)
       }
       const onUserAudio = (userId, pcmChunk) => {}
-      await initDiscordBot(onUserAudio, onCommand)
-
-      // Auto-join voice channel if GUILD_ID and CHANNEL_ID are set
-      // Note: This requires the bot to be invited to the voice channel in Discord first
       const autoGuild = process.env.GUILD_ID
       const autoChannel = process.env.CHANNEL_ID
-      if (autoGuild && autoChannel) {
-        setTimeout(async () => {
-          try {
-            await connectToVoiceChannel(autoGuild, autoChannel)
-            console.log(`[server] ✓ Auto-joined voice channel ${autoChannel}`)
-          } catch (err) {
-            console.error('[server] ⚠ Auto-join failed (requires manual invite in Discord):', err.message)
-            console.log('[server] To manually connect, use:')
-            console.log(`[server]   curl -X POST http://localhost:8080/api/discord/voice/connect \\`)
-            console.log(`[server]     -H "Content-Type: application/json" \\`)
-            console.log(`[server]     -d '{"guildId":"${autoGuild}","channelId":"${autoChannel}"}' `)
-          }
-        }, 3000)
-      }
+      const onBotReady = autoGuild && autoChannel ? async () => {
+        try {
+          await connectToVoiceChannel(autoGuild, autoChannel)
+          console.log(`[server] ✓ Auto-joined voice channel ${autoChannel}`)
+        } catch (err) {
+          console.error('[server] ⚠ Auto-join failed:', err.message)
+          console.log('[server] To manually connect:')
+          console.log(`[server]   curl -X POST http://localhost:8080/api/discord/voice/connect -H "Content-Type: application/json" -d '{"guildId":"${autoGuild}","channelId":"${autoChannel}"}'`)
+        }
+      } : null
+      await initDiscordBot(onUserAudio, onCommand, onBotReady)
     } catch (err) {
       console.error('[server] Failed to load Discord modules:', err.message)
     }

@@ -101,7 +101,7 @@ function subscribeUser(userId) {
   console.log(`[voice] subscribed to user ${userId}`)
 }
 
-async function initDiscordBot(onUserAudio, onCommand) {
+async function initDiscordBot(onUserAudio, onCommand, onReady) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN
   if (!token) {
     console.log('[discord] DISCORD_TOKEN not set, Discord bot disabled')
@@ -115,6 +115,7 @@ async function initDiscordBot(onUserAudio, onCommand) {
   discordClient.on('ready', () => {
     console.log('[discord] ✓ Bot ready - logged in as', discordClient.user.tag, `(ID: ${discordClient.user.id})`)
     isConnected = true
+    if (onReady) onReady()
   })
 
   discordClient.on('error', (err) => {
@@ -228,6 +229,10 @@ function getDebugState() {
   }
 }
 
+function getDiscordClient() {
+  return discordClient
+}
+
 export {
   initDiscordBot,
   connectToVoiceChannel,
@@ -236,4 +241,5 @@ export {
   sendAudioToVoice,
   handleJoinCommand,
   getDebugState,
+  getDiscordClient,
 }

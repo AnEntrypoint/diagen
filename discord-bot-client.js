@@ -170,8 +170,9 @@ function subscribeToSpeaker(userId, onPcmChunk) {
 
   decoder.on('data', (pcmBuf) => {
     const i16 = new Int16Array(pcmBuf.buffer, pcmBuf.byteOffset, pcmBuf.byteLength / 2)
-    const f32 = new Float32Array(i16.length)
-    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768
+    const monoLen = i16.length / 2
+    const f32 = new Float32Array(monoLen)
+    for (let i = 0; i < monoLen; i++) f32[i] = (i16[i * 2] + i16[i * 2 + 1]) / 2 / 32768
     onPcmChunk(userId, f32)
   })
 
