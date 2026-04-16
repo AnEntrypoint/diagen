@@ -225,7 +225,7 @@ async function start() {
   await loadVoiceEmbedding()
 
   // Lazy load Discord modules only if DISCORD_TOKEN is set
-  if (process.env.DISCORD_TOKEN) {
+  if (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN) {
     try {
       const discordHandler = await import('./discord-handler.js')
       const discordProcessor = await import('./discord-voice-processor.js')

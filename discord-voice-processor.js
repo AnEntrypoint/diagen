@@ -41,7 +41,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
     throw new Error(`step=validate userId=${userId}: sampleRate ${sampleRate} out of range`)
   }
 
-  if (!globalVoiceEmbedding) {
+  if (!voiceReferencePath) {
     throw new Error(`step=voiceEmbed userId=${userId}: no voice embedding loaded`)
   }
 

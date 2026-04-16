@@ -16,7 +16,7 @@ let processingQueue = []
  * @returns {Promise<void>}
  */
 async function initDiscordBot(onUserAudio, onCommand) {
-  const token = process.env.DISCORD_TOKEN
+  const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN
   if (!token) {
     console.log('[discord] DISCORD_TOKEN not set, Discord bot disabled')
     return

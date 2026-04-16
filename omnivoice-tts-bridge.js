@@ -137,13 +137,16 @@ export async function synthesize(text, refAudioPath, refText) {
   return new Promise((resolve, reject) => {
     let responseData = '';
     const timeout = setTimeout(() => {
-      responseListener?.();
+      ttsProcess.stdout.removeListener('data', onData);
       reject(new Error('TTS synthesis timeout (300s - model may be downloading)'));
     }, 300000);
 
-    const responseListener = ttsProcess.stdout.once('data', (chunk) => {
-      clearTimeout(timeout);
+    function onData(chunk) {
       responseData += chunk.toString();
+      if (!responseData.includes('\n')) return;
+
+      ttsProcess.stdout.removeListener('data', onData);
+      clearTimeout(timeout);
 
       try {
         const lines = responseData.trim().split('\n');
@@ -166,10 +169,11 @@ export async function synthesize(text, refAudioPath, refText) {
       } catch (err) {
         reject(new Error(`TTS response parse failed: ${err.message}`));
       }
-    });
+    }
+    ttsProcess.stdout.on('data', onData);
 
     try {
-      const refAudioB64 = refAudioPath ? require('fs').readFileSync(refAudioPath).toString('base64') : null;
+      const refAudioB64 = refAudioPath ? fs.readFileSync(refAudioPath).toString('base64') : null;
 
       const request = {
         text,
