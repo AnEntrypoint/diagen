@@ -25,7 +25,7 @@ function _destroyExisting(guildId) {
 }
 
 async function _tryJoin(channel, guild, attempt) {
-  console.log(`[discord] join attempt ${attempt}`)
+  console.log(`[discord] join attempt ${attempt}: guild=${guild.id}, channel=${channel.id}, channelType=${channel.type}`)
   const conn = joinVoiceChannel({
     channelId: channel.id,
     guildId: guild.id,
@@ -34,6 +34,7 @@ async function _tryJoin(channel, guild, attempt) {
     selfMute: false,
     debug: true,
   })
+  console.log(`[discord] joinVoiceChannel called, waiting for Ready state...`)
 
   let closeCode = null
   conn.on('stateChange', (oldState, newState) => {
@@ -63,7 +64,12 @@ async function _tryJoin(channel, guild, attempt) {
     return conn
   } catch (err) {
     try { conn.destroy() } catch {}
-    throw Object.assign(new Error(`Join failed: ${err.message}`), { closeCode })
+    const errMsg = err.message || String(err)
+    const finalErr = Object.assign(
+      new Error(`Join failed after ${attempt} attempt(s): ${errMsg}${closeCode ? ` (closeCode=${closeCode})` : ''}`),
+      { closeCode }
+    )
+    throw finalErr
   }
 }
 
