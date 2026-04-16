@@ -261,10 +261,22 @@ async function start() {
         if (!available) return `[LLM offline] Received: ${prompt}`
         return generateLLM(prompt)
       }
-      const onUserAudio = (userId, pcmChunk) => {
-        console.log(`[discord] Audio chunk from user ${userId}, ${pcmChunk.length} samples`)
-      }
+      const onUserAudio = (userId, pcmChunk) => {}
       await initDiscordBot(onUserAudio, onCommand)
+
+      // Auto-join voice channel if GUILD_ID and CHANNEL_ID are set
+      const autoGuild = process.env.GUILD_ID
+      const autoChannel = process.env.CHANNEL_ID
+      if (autoGuild && autoChannel) {
+        setTimeout(async () => {
+          try {
+            await connectToVoiceChannel(autoGuild, autoChannel)
+            console.log(`[server] Auto-joined voice channel ${autoChannel}`)
+          } catch (err) {
+            console.error('[server] Auto-join voice failed:', err.message)
+          }
+        }, 3000)
+      }
     } catch (err) {
       console.error('[server] Failed to load Discord modules:', err.message)
     }

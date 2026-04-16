@@ -8,13 +8,98 @@ let currentChannelState = { guildId: null, channelId: null }
 let lastError = null
 let messageCount = 0
 let processingQueue = []
+let _onUserAudio = null
+let _onCommand = null
 
-/**
- * Initialize the Discord bot and register event handlers
- * @param {Function} onUserAudio - Callback when user audio is received: (userId, pcmChunk) => void
- * @param {Function} onCommand - Callback when command message received: (userId, content) => Promise<string>
- * @returns {Promise<void>}
- */
+const SILENCE_THRESHOLD = 0.01
+const SILENCE_DURATION_MS = 1500
+const MIN_UTTERANCE_MS = 500
+const MAX_UTTERANCE_MS = 30000
+const SAMPLE_RATE = 48000
+
+const userBuffers = new Map()
+
+function getOrCreateBuffer(userId) {
+  if (!userBuffers.has(userId)) {
+    userBuffers.set(userId, { chunks: [], startTime: 0, lastVoiceTime: 0, processing: false })
+  }
+  return userBuffers.get(userId)
+}
+
+function rms(f32) {
+  let sum = 0
+  for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i]
+  return Math.sqrt(sum / f32.length)
+}
+
+async function handleUtterance(userId, chunks) {
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0)
+  const merged = new Float32Array(totalLen)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.length
+  }
+  const int16 = new Int16Array(merged.length)
+  for (let i = 0; i < merged.length; i++) {
+    const v = Math.max(-1, Math.min(1, merged[i]))
+    int16[i] = v < 0 ? v * 0x8000 : v * 0x7FFF
+  }
+  const pcmBuffer = Buffer.from(int16.buffer)
+  const durationMs = (totalLen / SAMPLE_RATE) * 1000
+  console.log(`[voice] userId=${userId} utterance: ${(durationMs / 1000).toFixed(1)}s, ${totalLen} samples`)
+
+  processingQueue.push({ userId, startTime: Date.now(), samples: totalLen })
+  try {
+    const audioOutput = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
+    await sendAudioToDiscord(audioOutput, SAMPLE_RATE)
+    console.log(`[voice] userId=${userId} response sent: ${audioOutput.length} bytes`)
+  } catch (err) {
+    console.error(`[voice] userId=${userId} pipeline error: ${err.message}`)
+    lastError = { message: err.message, timestamp: Date.now(), userId }
+  } finally {
+    processingQueue = processingQueue.filter(p => p.userId !== userId || p.startTime !== processingQueue.find(q => q.userId === userId)?.startTime)
+  }
+}
+
+function onPcmChunk(userId, f32) {
+  const buf = getOrCreateBuffer(userId)
+  if (buf.processing) return
+
+  const now = Date.now()
+  const level = rms(f32)
+  const isSpeech = level > SILENCE_THRESHOLD
+
+  if (isSpeech) {
+    if (buf.chunks.length === 0) buf.startTime = now
+    buf.lastVoiceTime = now
+    buf.chunks.push(new Float32Array(f32))
+  }
+
+  if (buf.chunks.length === 0) return
+
+  const utteranceDuration = now - buf.startTime
+  const silenceDuration = now - buf.lastVoiceTime
+  const shouldFlush = silenceDuration >= SILENCE_DURATION_MS || utteranceDuration >= MAX_UTTERANCE_MS
+
+  if (!shouldFlush) return
+
+  if (utteranceDuration < MIN_UTTERANCE_MS) {
+    buf.chunks = []
+    return
+  }
+
+  const chunks = buf.chunks
+  buf.chunks = []
+  buf.processing = true
+  handleUtterance(userId, chunks).finally(() => { buf.processing = false })
+}
+
+function subscribeUser(userId) {
+  subscribeToSpeaker(userId, onPcmChunk)
+  console.log(`[voice] subscribed to user ${userId}`)
+}
+
 async function initDiscordBot(onUserAudio, onCommand) {
   const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN
   if (!token) {
@@ -22,6 +107,8 @@ async function initDiscordBot(onUserAudio, onCommand) {
     return
   }
 
+  _onUserAudio = onUserAudio
+  _onCommand = onCommand
   discordClient = createClient()
 
   discordClient.on('ready', () => {
@@ -30,58 +117,38 @@ async function initDiscordBot(onUserAudio, onCommand) {
   })
 
   discordClient.on('messageCreate', async (message) => {
-    // Ignore bot's own messages and DMs
     if (message.author.bot || !message.guild) return
 
-    // !join <channel-id> command
     if (message.content.startsWith('!join ')) {
       const channelId = message.content.slice(6).trim()
-      if (!channelId) {
-        await message.reply('Usage: !join <channel-id>')
-        return
-      }
-
+      if (!channelId) { await message.reply('Usage: !join <channel-id>'); return }
       try {
         await handleJoinCommand(message.guildId, channelId)
         await message.reply(`Joining voice channel ${channelId}...`)
       } catch (err) {
-        console.error('[discord] Join command error:', err)
         await message.reply('Error joining channel: ' + err.message)
       }
     }
 
-    // Simple command handling: !diagen <prompt>
     if (message.content.startsWith('!diagen ')) {
       const prompt = message.content.slice(8).trim()
-      if (!prompt) {
-        await message.reply('Usage: !diagen <prompt>')
-        return
-      }
-
+      if (!prompt) { await message.reply('Usage: !diagen <prompt>'); return }
       try {
         await message.channel.sendTyping()
-        const response = await onCommand(message.author.id, prompt)
-
-        // Split response into chunks if too long
+        messageCount++
+        const response = await _onCommand(message.author.id, prompt)
         const chunks = []
-        for (let i = 0; i < response.length; i += 2000) {
-          chunks.push(response.slice(i, i + 2000))
-        }
-
-        for (const chunk of chunks) {
-          await message.reply(chunk)
-        }
+        for (let i = 0; i < response.length; i += 2000) chunks.push(response.slice(i, i + 2000))
+        for (const chunk of chunks) await message.reply(chunk)
       } catch (err) {
-        console.error('[discord] Command error:', err)
-        await message.reply('Error processing command: ' + err.message)
+        await message.reply('Error: ' + err.message)
       }
     }
   })
 
   discordClient.on('voiceStateUpdate', (oldState, newState) => {
-    // Bot joins when it detects voice activity
-    if (newState.channelId && newState.member?.user?.bot === false) {
-      console.log('[discord]', newState.member.user.username, 'joined voice channel')
+    if (!newState.member?.user?.bot && newState.channelId === currentChannelState.channelId && newState.guild?.id === currentChannelState.guildId) {
+      subscribeUser(newState.member.id)
     }
   })
 
@@ -94,148 +161,59 @@ async function initDiscordBot(onUserAudio, onCommand) {
   }
 }
 
-/**
- * Connect the bot to a voice channel and start listening
- * @param {string} guildId - Discord guild ID
- * @param {string} channelId - Discord voice channel ID
- * @returns {Promise<void>}
- */
 async function connectToVoiceChannel(guildId, channelId) {
   if (!discordClient) throw new Error('Discord bot not initialized')
   if (!isConnected) throw new Error('Discord bot not ready')
 
-  try {
-    const { voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
-    console.log('[discord] Connected to voice channel')
+  const { voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
+  currentChannelState = { guildId, channelId }
+  console.log('[discord] Connected to voice channel')
 
-    // Set up speaker subscriptions for all users in the channel
-    const guild = await discordClient.guilds.fetch(guildId)
-    const channel = await guild.channels.fetch(channelId)
+  const guild = await discordClient.guilds.fetch(guildId)
+  const channel = await guild.channels.fetch(channelId)
 
-    if (channel.type === ChannelType.GuildVoice) {
-      for (const member of channel.members.values()) {
-        if (!member.user.bot) {
-          subscribeToSpeaker(member.id, async (userId, pcmChunk) => {
-            try {
-              const audioOutput = await processUserAudio(pcmChunk, 48000, userId)
-              await sendAudioToDiscord(audioOutput, 48000)
-              console.log(`[discord] Processed audio for ${userId}: ${audioOutput.length} bytes`)
-            } catch (err) {
-              console.error(`[discord] Audio processing error for userId=${userId}: ${err.message}`)
-            }
-            if (onUserAudio) onUserAudio(userId, pcmChunk)
-          })
-        }
-      }
+  if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
+    for (const member of channel.members.values()) {
+      if (!member.user.bot) subscribeUser(member.id)
     }
-  } catch (err) {
-    console.error('[discord] Failed to connect to voice:', err)
-    throw err
   }
 }
 
-/**
- * Disconnect from the current voice channel
- */
 function disconnectFromVoiceChannel() {
   leaveVoice()
+  userBuffers.clear()
+  currentChannelState = { guildId: null, channelId: null }
   console.log('[discord] Disconnected from voice channel')
 }
 
-/**
- * Send a text message to a Discord channel
- * @param {string} channelId - Discord channel ID
- * @param {string} message - Message content
- * @returns {Promise<void>}
- */
 async function sendMessage(channelId, message) {
   if (!discordClient) throw new Error('Discord bot not initialized')
-
-  try {
-    const channel = await discordClient.channels.fetch(channelId)
-    const chunks = []
-    for (let i = 0; i < message.length; i += 2000) {
-      chunks.push(message.slice(i, i + 2000))
-    }
-    for (const chunk of chunks) {
-      await channel.send(chunk)
-    }
-  } catch (err) {
-    console.error('[discord] Failed to send message:', err)
-    throw err
-  }
+  const channel = await discordClient.channels.fetch(channelId)
+  const chunks = []
+  for (let i = 0; i < message.length; i += 2000) chunks.push(message.slice(i, i + 2000))
+  for (const chunk of chunks) await channel.send(chunk)
 }
 
-/**
- * Send audio to Discord voice channel
- * @param {Buffer|Float32Array|Int16Array} pcmData - PCM audio data
- * @param {number} sampleRate - Sample rate of input (default 48000)
- * @returns {Promise<void>}
- */
 async function sendAudioToVoice(pcmData, sampleRate = 48000) {
-  if (!isConnected) {
-    throw new Error('[discord] Bot not connected to Discord');
-  }
-  try {
-    await sendAudioToDiscord(pcmData, sampleRate);
-  } catch (err) {
-    console.error(`[discord] Failed to send audio: ${err.message}`);
-    lastError = { message: err.message, timestamp: Date.now() };
-    throw err;
-  }
+  if (!isConnected) throw new Error('[discord] Bot not connected')
+  await sendAudioToDiscord(pcmData, sampleRate)
 }
 
-/**
- * Check if bot is connected to Discord
- */
-function isDiscordConnected() {
-  return isConnected
-}
-
-/**
- * Get the Discord client instance
- */
-function getDiscordClient() {
-  return discordClient
-}
-
-/**
- * Handle !join command - store channel state and connect
- * @param {string} guildId - Discord guild ID
- * @param {string} channelId - Discord voice channel ID
- * @returns {Promise<void>}
- */
 async function handleJoinCommand(guildId, channelId) {
-  currentChannelState.guildId = guildId
-  currentChannelState.channelId = channelId
-  console.log('[discord] Stored channel state:', currentChannelState)
+  currentChannelState = { guildId, channelId }
   await connectToVoiceChannel(guildId, channelId)
 }
 
-/**
- * Get current stored channel state
- * @returns {Object} Copy of current channel state
- */
-function getCurrentChannelState() {
-  return { ...currentChannelState }
-}
-
-let onUserAudio = null
-let onCommand = null
-
-/**
- * Get debug state for observability endpoint
- */
 function getDebugState() {
-  const audioState = getAudioDebugState();
   return {
     connected: isConnected,
     guildId: currentChannelState.guildId,
     channelId: currentChannelState.channelId,
-    lastError: lastError,
-    messageCount: messageCount,
-    processingQueue: processingQueue,
-    audio: audioState,
+    lastError,
+    messageCount,
+    processingQueue,
+    activeListeners: [...userBuffers.keys()],
+    audio: getAudioDebugState(),
   }
 }
 
@@ -245,9 +223,6 @@ export {
   disconnectFromVoiceChannel,
   sendMessage,
   sendAudioToVoice,
-  isDiscordConnected,
-  getDiscordClient,
   handleJoinCommand,
-  getCurrentChannelState,
   getDebugState,
 }
