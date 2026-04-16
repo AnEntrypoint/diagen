@@ -1,6 +1,7 @@
 import { ChannelType } from 'discord.js'
-import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice, sendAudioToDiscord, getAudioDebugState } from './discord-bot-client.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './discord-bot-client.js'
 import { processUserAudio } from './discord-voice-processor.js'
+import { initVoicePlayer, pushAudioFrame } from './discord-voice-player.js'
 
 let discordClient = null
 let isConnected = false
@@ -52,7 +53,7 @@ async function handleUtterance(userId, chunks) {
   processingQueue.push({ userId, startTime: Date.now(), samples: totalLen })
   try {
     const audioOutput = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
-    await sendAudioToDiscord(audioOutput, SAMPLE_RATE)
+    pushAudioFrame(audioOutput)
     console.log(`[voice] userId=${userId} response sent: ${audioOutput.length} bytes`)
   } catch (err) {
     console.error(`[voice] userId=${userId} pipeline error: ${err.message}`)
@@ -165,9 +166,11 @@ async function connectToVoiceChannel(guildId, channelId) {
   if (!discordClient) throw new Error('Discord bot not initialized')
   if (!isConnected) throw new Error('Discord bot not ready')
 
-  const { voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
+  const { voiceConnection, voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
   currentChannelState = { guildId, channelId }
   console.log('[discord] Connected to voice channel')
+
+  initVoicePlayer(voiceConnection)
 
   const guild = await discordClient.guilds.fetch(guildId)
   const channel = await guild.channels.fetch(channelId)
@@ -213,7 +216,6 @@ function getDebugState() {
     messageCount,
     processingQueue,
     activeListeners: [...userBuffers.keys()],
-    audio: getAudioDebugState(),
   }
 }
 
