@@ -113,7 +113,7 @@ async function initDiscordBot(onUserAudio, onCommand) {
   discordClient = createClient()
 
   discordClient.on('ready', () => {
-    console.log('[discord] Logged in as', discordClient.user.tag)
+    console.log('[discord] ✓ Bot ready - logged in as', discordClient.user.tag, `(ID: ${discordClient.user.id})`)
     isConnected = true
   })
 
