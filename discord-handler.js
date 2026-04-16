@@ -117,6 +117,15 @@ async function initDiscordBot(onUserAudio, onCommand) {
     isConnected = true
   })
 
+  discordClient.on('error', (err) => {
+    console.error('[discord] Client error:', err.message)
+    lastError = { message: err.message, timestamp: Date.now() }
+  })
+
+  discordClient.on('warn', (warn) => {
+    console.warn('[discord] Client warning:', warn)
+  })
+
   discordClient.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return
 
