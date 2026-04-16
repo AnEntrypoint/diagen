@@ -107,7 +107,7 @@ async function joinDiscordVoice(client, guildId, channelId) {
     client.on('voiceStateUpdate', onVoiceState)
   })
 
-  for (let attempt = 1; attempt <= 8; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       voiceConnection = await _tryJoin(channel, guild, attempt)
       voiceReceiver = voiceConnection.receiver
@@ -116,26 +116,37 @@ async function joinDiscordVoice(client, guildId, channelId) {
         console.log('[discord] voice disconnected, voice.js will attempt rejoin')
       })
 
+      console.log('[discord] ✓ Voice connection successful!')
       return { voiceConnection, voiceReceiver }
     } catch (err) {
       console.log(`[discord] attempt ${attempt} failed: ${err.message}, closeCode=${err.closeCode}`)
       _destroyExisting(guildId)
-      const delay = err.closeCode === 4017 ? 10000 : err.closeCode === 4006 ? 8000 : 4000
-      console.log(`[discord] waiting ${delay}ms before retry...`)
-      await new Promise(r => setTimeout(r, delay))
-      if (err.closeCode === 4006) {
-        console.log('[discord] 4006: stale session — ensure no other instance is using this bot token in voice. Re-sending leave...')
-        try {
-          for (const shard of client.ws.shards.values()) {
-            shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
-          }
-        } catch (e) { console.log('[discord] leave send error:', e.message) }
-        await new Promise(r => setTimeout(r, 2000))
+
+      // Fail fast on 4017 - this is a permanent auth issue
+      if (err.closeCode === 4017) {
+        throw new Error(`Discord rejected voice connection (error 4017: Invalid Guild). ` +
+          `This means: bot is not invited to the server, lacks voice permissions, ` +
+          `or the voice channel doesn't exist. Verify bot permissions in Discord.`)
+      }
+
+      const delay = err.closeCode === 4006 ? 8000 : 4000
+      if (attempt < 3) {
+        console.log(`[discord] waiting ${delay}ms before retry (attempt ${attempt}/3)...`)
+        await new Promise(r => setTimeout(r, delay))
+        if (err.closeCode === 4006) {
+          console.log('[discord] 4006: stale session — clearing and retrying...')
+          try {
+            for (const shard of client.ws.shards.values()) {
+              shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
+            }
+          } catch (e) { console.log('[discord] leave send error:', e.message) }
+          await new Promise(r => setTimeout(r, 2000))
+        }
       }
     }
   }
 
-  throw new Error('Voice connection failed after 8 attempts')
+  throw new Error('Voice connection failed after 3 attempts')
 }
 
 function subscribeToSpeaker(userId, onPcmChunk) {
