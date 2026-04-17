@@ -1,3 +1,10 @@
+
+## 2026-04-17
+- Ported Discord voice to dispipe/client + dispipe/voice packages
+- Added discord-vad.js: stereo→mono downmix, RMS VAD, utterance buffering
+- discord-handler.js: voiceReceiver.speaking.on('start') event-based speaker subscription
+- discord-voice-processor.js: returns Float32Array (48kHz) directly to pushAudioFrame
+- Added test.js: VAD downmix, RMS threshold, PCM encoding, resample ratio assertions
 # Changelog
 
 ## [Unreleased]
