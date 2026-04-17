@@ -75,6 +75,23 @@ async function _tryJoin(channel, guild) {
   }
 }
 
+async function _forceLeave(client, guildId) {
+  const shard = client.ws._ws.strategy.shards.first()
+  const leavePromise = new Promise(resolve => {
+    const onRaw = (packet) => {
+      if (packet.t === 'VOICE_STATE_UPDATE' && packet.d.user_id === client.user.id && packet.d.guild_id === guildId && packet.d.channel_id === null) {
+        client.off('raw', onRaw)
+        resolve(true)
+      }
+    }
+    client.on('raw', onRaw)
+    setTimeout(() => { client.off('raw', onRaw); resolve(false) }, 5000)
+  })
+  await shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
+  const confirmed = await leavePromise
+  console.log(`[discord] pre-join leave ${confirmed ? 'confirmed' : 'timed out'}`)
+}
+
 async function joinDiscordVoice(client, guildId, channelId) {
   let guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
   if (!guild) throw new Error(`Guild ${guildId} not found`)
@@ -88,6 +105,8 @@ async function joinDiscordVoice(client, guildId, channelId) {
   if (perms && !perms.has('Connect')) throw new Error(`Bot lacks CONNECT permission in channel ${channelId}`)
 
   _destroyExisting(guildId)
+
+  await _forceLeave(client, guildId)
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     console.log(`[discord] join attempt ${attempt}: guild=${guildId} channel=${channelId}`)
