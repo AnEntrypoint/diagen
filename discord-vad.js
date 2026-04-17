@@ -1,7 +1,7 @@
 import { processUserAudio } from './discord-voice-processor.js'
 import { pushAudioFrame } from 'dispipe/voice'
 
-const SILENCE_THRESHOLD = 0.01
+const SILENCE_THRESHOLD = 0.0005
 const SILENCE_DURATION_MS = 1500
 const MIN_UTTERANCE_MS = 500
 const MAX_UTTERANCE_MS = 30000
@@ -10,6 +10,7 @@ const SAMPLE_RATE = 48000
 const userBuffers = new Map()
 let _processingQueue = null
 let _lastError = null
+let _chunkCount = 0
 
 export function init(processingQueue, lastErrorRef) {
   _processingQueue = processingQueue
@@ -61,13 +62,21 @@ async function handleUtterance(userId, chunks) {
   }
 }
 
-export function onPcmChunk(userId, f32) {
+export function onPcmChunk(userId, stereoF32) {
+  const monoLen = stereoF32.length / 2
+  const f32 = new Float32Array(monoLen)
+  for (let i = 0; i < monoLen; i++) f32[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
+
   const buf = getOrCreateBuffer(userId)
   if (buf.processing) return
 
   const now = Date.now()
   const level = rms(f32)
   const isSpeech = level > SILENCE_THRESHOLD
+  _chunkCount++
+  if (_chunkCount <= 10 || _chunkCount % 100 === 0) {
+    console.log(`[vad] chunk #${_chunkCount} userId=${userId} len=${f32.length} level=${level.toFixed(4)} speech=${isSpeech}`)
+  }
 
   if (isSpeech) {
     if (buf.chunks.length === 0) buf.startTime = now

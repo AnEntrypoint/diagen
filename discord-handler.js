@@ -1,6 +1,8 @@
 import { ChannelType } from 'discord.js'
-import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice, lastVoiceCloseCode } from './discord-bot-client.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from 'dispipe/client'
 import { initVoicePlayer } from 'dispipe/voice'
+
+const lastVoiceCloseCode = { value: null, reason: null }
 import { onPcmChunk, init as initVad, getBuffers } from './discord-vad.js'
 
 let discordClient = null
@@ -80,14 +82,17 @@ async function connectToVoiceChannel(guildId, channelId) {
   initVoicePlayer(voiceConnection)
 
   voiceReceiver.speaking.on('start', (userId) => {
+    if (userId === discordClient.user.id) return
     subscribeToSpeaker(userId, onPcmChunk)
     console.log(`[voice] subscribed to speaker ${userId}`)
   })
 
   const guild = await discordClient.guilds.fetch(guildId)
   const channel = await guild.channels.fetch(channelId)
+  console.log(`[voice] channel ${channel.name} type=${channel.type} members=${channel.members.size}`)
   if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
     for (const member of channel.members.values()) {
+      console.log(`[voice] channel member: ${member.id} bot=${member.user.bot} name=${member.user.username}`)
       if (!member.user.bot) {
         subscribeToSpeaker(member.id, onPcmChunk)
         console.log(`[voice] pre-subscribed to ${member.id}`)

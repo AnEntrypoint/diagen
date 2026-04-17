@@ -25,12 +25,18 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
   if (!voiceReferencePath) throw new Error(`step=voiceEmbed userId=${userId}: no voice embedding loaded`)
 
   try {
+    console.log(`[processor] userId=${userId} step=transcribe start (${pcmBuffer.length} bytes)`)
     const transcription = await transcribe(pcmBuffer, sampleRate)
+    console.log(`[processor] userId=${userId} step=transcribe done: "${transcription.text}" confidence=${transcription.confidence.toFixed(2)}`)
     if (transcription.confidence < 0.01) console.log(`[processor] userId=${userId} low confidence: ${transcription.confidence}`)
 
+    console.log(`[processor] userId=${userId} step=generate start`)
     const responseText = await generateResponse(transcription.text, userId)
+    console.log(`[processor] userId=${userId} step=generate done: "${responseText.slice(0, 80)}"`)
 
+    console.log(`[processor] userId=${userId} step=synthesize start`)
     const { audio: ttsAudio, sampleRate: ttsSampleRate } = await synthesize(responseText, voiceReferencePath, 'reference speech')
+    console.log(`[processor] userId=${userId} step=synthesize done: ${ttsAudio?.length} samples @ ${ttsSampleRate}Hz`)
     if (!ttsAudio || ttsAudio.length === 0) throw new Error(`step=synthesize userId=${userId}: empty synthesis output`)
 
     const fromRate = ttsSampleRate || SAMPLE_RATE_TTS_FALLBACK
