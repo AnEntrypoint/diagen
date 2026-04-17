@@ -341,6 +341,16 @@ async function start() {
       setVoiceEmbedding(CLEETUS_WAV)
       console.log('[server] Voice reference path set for Discord processor')
 
+      const cleetusCard = CLEETUS_WAV.replace(/\.wav$/i, '.json')
+      if (fs.existsSync(cleetusCard)) {
+        try {
+          setCharacterCard(JSON.parse(fs.readFileSync(cleetusCard, 'utf8')))
+          console.log('[server] Loaded default character card from', cleetusCard)
+        } catch (err) {
+          console.warn('[server] Failed to load character card:', err.message)
+        }
+      }
+
       // Initialize Discord bot
       const onCommand = async (userId, prompt) => {
         const available = await isLLMAvailable()

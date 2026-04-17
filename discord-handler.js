@@ -67,7 +67,8 @@ async function initDiscordBot(onUserAudio, onCommand, onReady) {
     console.log('[discord] Bot connecting...')
   } catch (err) {
     console.error('[discord] Failed to login:', err.message)
-    process.exit(1)
+    isConnected = false
+    throw err
   }
 }
 
