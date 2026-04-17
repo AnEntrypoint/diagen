@@ -14,9 +14,10 @@ let characterSystemPrompt = null
 
 export function setCharacterCard(card) {
   const d = card.spec === 'chara_card_v2' ? card.data : card
-  const parts = [d.name && `Name: ${d.name}`, d.description, d.personality && `Personality: ${d.personality}`, d.scenario && `Scenario: ${d.scenario}`].filter(Boolean)
-  characterSystemPrompt = parts.join('\n\n') || null
-  console.log(`[processor] character card set: ${d.name || '(unnamed)'} (${characterSystemPrompt?.length || 0} chars)`)
+  const parts = [d.description, d.personality && `Personality: ${d.personality}`, d.scenario && `Scenario: ${d.scenario}`].filter(Boolean)
+  const name = d.name || 'the character'
+  characterSystemPrompt = `You are ${name}. Stay in character at all times. Respond only as ${name} would speak — never describe yourself, never recite your backstory unprompted, just talk naturally in character. Keep replies short, one or two sentences.\n\n${parts.join('\n\n')}`
+  console.log(`[processor] character card set: ${name} (${characterSystemPrompt.length} chars)`)
 }
 
 export function getCharacterSystemPrompt() { return characterSystemPrompt }
