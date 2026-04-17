@@ -35,7 +35,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
     console.log(`[processor] userId=${userId} step=generate done: "${responseText.slice(0, 80)}"`)
 
     console.log(`[processor] userId=${userId} step=synthesize start`)
-    const { audio: ttsAudio, sampleRate: ttsSampleRate } = await synthesize(responseText, voiceReferencePath, 'reference speech')
+    const { audio: ttsAudio, sampleRate: ttsSampleRate } = await synthesize(responseText, null, null)
     console.log(`[processor] userId=${userId} step=synthesize done: ${ttsAudio?.length} samples @ ${ttsSampleRate}Hz`)
     if (!ttsAudio || ttsAudio.length === 0) throw new Error(`step=synthesize userId=${userId}: empty synthesis output`)
 

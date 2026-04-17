@@ -11,6 +11,8 @@ const userBuffers = new Map()
 let _processingQueue = null
 let _lastError = null
 let _chunkCount = 0
+let _botSpeakingUntil = 0
+const BOT_SPEAK_TAIL_MS = 800
 
 export function init(processingQueue, lastErrorRef) {
   _processingQueue = processingQueue
@@ -51,8 +53,11 @@ async function handleUtterance(userId, chunks) {
     const monoOut = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
     const stereo = new Float32Array(monoOut.length * 2)
     for (let i = 0; i < monoOut.length; i++) { stereo[i * 2] = monoOut[i]; stereo[i * 2 + 1] = monoOut[i] }
+    const durationMs = (monoOut.length / SAMPLE_RATE) * 1000
+    _botSpeakingUntil = Date.now() + durationMs + BOT_SPEAK_TAIL_MS
     pushAudioFrame(stereo)
-    console.log(`[voice] userId=${userId} response sent: ${monoOut.length} mono samples -> ${stereo.length} stereo`)
+    console.log(`[voice] userId=${userId} response sent: ${monoOut.length} mono samples, bot-speaking ${durationMs.toFixed(0)}ms`)
+    for (const b of userBuffers.values()) b.chunks = []
   } catch (err) {
     console.error(`[voice] userId=${userId} pipeline error: ${err.message}`)
     _lastError.value = { message: err.message, timestamp: Date.now(), userId }
@@ -63,6 +68,7 @@ async function handleUtterance(userId, chunks) {
 }
 
 export function onPcmChunk(userId, stereoF32) {
+  if (Date.now() < _botSpeakingUntil) return
   const monoLen = stereoF32.length / 2
   const f32 = new Float32Array(monoLen)
   for (let i = 0; i < monoLen; i++) f32[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
