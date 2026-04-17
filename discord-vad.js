@@ -1,11 +1,12 @@
-import { processUserAudio, processTranscript } from './discord-voice-processor.js'
+import { processUserAudio, processTranscript, noteBotSpeech, noteBotInterrupted, startPreSynth, consumePreSynth, clearPendingContinuation, startSpeculativeGenerate, cancelSpeculative } from './discord-voice-processor.js'
 import { pushAudioFrame, flushAudio } from 'dispipe/voice'
-import { pushFrame, finalizeAndClear, clear as clearStream } from './whisper-stream.js'
+import { pushFrame, finalizeAndClear, clear as clearStream, onPartial } from './whisper-stream.js'
+import { pick as pickPreamble, isReady as preambleReady } from './preamble-cache.js'
 
 const SILENCE_THRESHOLD_BASE = 0.004
 const INTERRUPT_THRESHOLD = 0.025
-const SILENCE_DURATION_MS = 900
-const INTERRUPT_SILENCE_MS = 350
+const SILENCE_DURATION_MS = 550
+const INTERRUPT_SILENCE_MS = 300
 const MIN_UTTERANCE_MS = 400
 const MIN_SPEECH_SAMPLES = 48000 * 0.4
 const MAX_UTTERANCE_MS = 15000
@@ -37,6 +38,12 @@ function getOrCreateBuffer(userId) {
   if (!userBuffers.has(userId)) {
     userBuffers.set(userId, { chunks: [], preroll: [], prerollSamples: 0, startTime: 0, lastVoiceTime: 0, processing: false, peakRms: 0, capturing: false })
     console.log(`[vad] new buffer for uid=${userId}`)
+    onPartial(userId, (text, conf, prev) => {
+      if (conf > 0.2 && text.length >= 15 && text === prev) {
+        const username = _usernameResolver(userId)
+        startSpeculativeGenerate(userId, text, username)
+      }
+    })
   }
   return userBuffers.get(userId)
 }
@@ -55,21 +62,42 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
   _currentAbort = abort
   const entry = { userId, startTime: Date.now() }
   _processingQueue.push(entry)
+
+  if (preambleReady() && Math.random() < 0.6) {
+    const pre = pickPreamble('thinking')
+    if (pre) {
+      const stereo = new Float32Array(pre.audio.length * 2)
+      for (let i = 0; i < pre.audio.length; i++) { stereo[i * 2] = pre.audio[i]; stereo[i * 2 + 1] = pre.audio[i] }
+      const durMs = (pre.audio.length / SAMPLE_RATE) * 1000
+      _botSpeakingUntil = Date.now() + durMs + BOT_SPEAK_TAIL_MS
+      pushAudioFrame(stereo)
+      console.log(`[vad] ⚡ preamble "${pre.text}" (${durMs.toFixed(0)}ms) — hiding LLM latency`)
+    }
+  }
   try {
     const { text, confidence } = await finalizeAndClear(userId)
     if (abort.signal.aborted) { console.log(`[vad] uid=${userId} aborted before generate`); return }
     const username = _usernameResolver(userId)
-    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username)
+    let firstChunkAt = null
+    const onChunk = (monoChunk) => {
+      if (abort.signal.aborted) return
+      const stereo = new Float32Array(monoChunk.length * 2)
+      for (let i = 0; i < monoChunk.length; i++) { stereo[i * 2] = monoChunk[i]; stereo[i * 2 + 1] = monoChunk[i] }
+      const durMs = (monoChunk.length / SAMPLE_RATE) * 1000
+      const base = Math.max(_botSpeakingUntil, Date.now())
+      _botSpeakingUntil = base + durMs + BOT_SPEAK_TAIL_MS
+      pushAudioFrame(stereo)
+      if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms dur=${durMs.toFixed(0)}ms`) }
+    }
+    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk)
     if (!monoOut || abort.signal.aborted) {
       console.log(`[vad] uid=${userId} no output (aborted=${abort.signal.aborted})`)
       return
     }
-    const stereo = new Float32Array(monoOut.length * 2)
-    for (let i = 0; i < monoOut.length; i++) { stereo[i * 2] = monoOut[i]; stereo[i * 2 + 1] = monoOut[i] }
-    const durationMs = (monoOut.length / SAMPLE_RATE) * 1000
-    _botSpeakingUntil = Date.now() + durationMs + BOT_SPEAK_TAIL_MS
-    pushAudioFrame(stereo)
-    console.log(`[vad] 📢 speaking uid=${userId} ${durationMs.toFixed(0)}ms → until ${new Date(_botSpeakingUntil).toISOString().slice(14,23)}`)
+    const totalDurMs = (monoOut.length / SAMPLE_RATE) * 1000
+    noteBotSpeech(monoOut._text || '[response]', totalDurMs)
+    console.log(`[vad] 📢 speaking-total uid=${userId} ${totalDurMs.toFixed(0)}ms → until ${new Date(_botSpeakingUntil).toISOString().slice(14,23)}`)
+
   } catch (err) {
     if (err.name === 'AbortError' || err.message?.includes('aborted')) {
       console.log(`[vad] uid=${userId} pipeline aborted cleanly`)
@@ -139,6 +167,7 @@ export function onPcmChunk(userId, stereoF32) {
 
   if (botSpeaking) {
     console.log(`[vad] ⚡ INTERRUPT uid=${userId} dur=${utteranceDuration}ms peak=${peak.toFixed(4)}`)
+    noteBotInterrupted()
     _botSpeakingUntil = 0
     flushAudio()
     if (_currentAbort) { _currentAbort.abort(); _currentAbort = null }

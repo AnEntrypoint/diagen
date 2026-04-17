@@ -57,12 +57,13 @@ async function maybeRetranscribe(userId) {
   try {
     const result = await transcribe(pcmBuffer, SAMPLE_RATE)
     const text = (result.text || '').trim()
+    const prev = s.latestText
     s.latestText = text
     s.latestConf = result.confidence
     s.lastTranscribeAt = Date.now()
     s.lastTranscribeSamples = snapshotSamples
     console.log(`[stream] uid=${userId} streaming STT ${Date.now()-t0}ms samples=${snapshotSamples} → "${text.slice(0,60)}"`)
-    for (const fn of s.listeners) try { fn(text, result.confidence) } catch {}
+    for (const fn of s.listeners) try { fn(text, result.confidence, prev) } catch {}
   } catch (err) {
     console.error(`[stream] uid=${userId} transcribe error:`, err.message)
   } finally {

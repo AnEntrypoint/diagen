@@ -341,6 +341,11 @@ async function start() {
       setVoiceEmbedding(CLEETUS_WAV)
       console.log('[server] Voice reference path set for Discord processor')
 
+      const preambleCache = await import('./preamble-cache.js')
+      const refTextPath = CLEETUS_WAV.replace(/\.wav$/i, '.txt')
+      const refText = fs.existsSync(refTextPath) ? fs.readFileSync(refTextPath, 'utf8').trim() : null
+      preambleCache.warmup(CLEETUS_WAV, refText).catch(err => console.warn('[server] preamble warmup:', err.message))
+
       const cleetusCard = CLEETUS_WAV.replace(/\.wav$/i, '.json')
       if (fs.existsSync(cleetusCard)) {
         try {

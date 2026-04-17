@@ -12,7 +12,7 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
         prompt: `${system}\n\n${prompt}`,
         raw: true,
         stream: false,
-        options: { temperature: 0.9, top_p: 0.92, num_predict: 180, repeat_penalty: 1.25, stop: ['\n\n'] },
+        options: { temperature: 0.9, top_p: 0.92, num_predict: 300, repeat_penalty: 1.25, stop: ['\n\n'] },
       }),
       signal,
     })

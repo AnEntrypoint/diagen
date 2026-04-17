@@ -16,6 +16,65 @@ let characterName = 'assistant'
 const recentHistory = []
 const MAX_HISTORY = 3
 
+let _pendingContinuation = null
+let _currentSpeech = null
+let _preSynthPromise = null
+
+export function noteBotSpeech(text, durationMs) {
+  _currentSpeech = { text, startedAt: Date.now(), durationMs }
+  _pendingContinuation = null
+  _preSynthPromise = null
+}
+
+export function noteBotInterrupted() {
+  if (!_currentSpeech) return null
+  const elapsed = Date.now() - _currentSpeech.startedAt
+  const spokenFraction = Math.max(0, Math.min(1, elapsed / _currentSpeech.durationMs))
+  const words = _currentSpeech.text.split(/\s+/).filter(Boolean)
+  const spokenWords = Math.floor(words.length * spokenFraction)
+  const unsaid = words.slice(spokenWords).join(' ').trim()
+  _currentSpeech = null
+  if (!unsaid || unsaid.length < 4) { _pendingContinuation = null; return null }
+  _pendingContinuation = unsaid
+  console.log(`[processor] 🔖 interrupted at ${(spokenFraction*100).toFixed(0)}% — remainder="${unsaid.slice(0,60)}"`)
+  return unsaid
+}
+
+export function getPendingContinuation() { return _pendingContinuation }
+export function clearPendingContinuation() { _pendingContinuation = null; _preSynthPromise = null }
+
+const SEGUE_PREFIXES = ['Anyway, as I was sayin — ', 'Like I was sayin — ', 'But yeah, — ', 'Oye so anyway — ']
+
+export function startPreSynth() {
+  if (!_pendingContinuation || _preSynthPromise) return
+  const prefix = SEGUE_PREFIXES[Math.floor(Math.random() * SEGUE_PREFIXES.length)]
+  const text = prefix + _pendingContinuation
+  console.log(`[processor] 🎙️ pre-synth segue: "${text.slice(0,60)}"`)
+  const refText = getVoiceReferenceText()
+  _preSynthPromise = (async () => {
+    const t0 = Date.now()
+    try {
+      const { audio, sampleRate: sr } = await synthesize(text, refText ? voiceReferencePath : null, refText || null)
+      console.log(`[processor] ✓ pre-synth ready ${Date.now()-t0}ms samples=${audio?.length}`)
+      return { audio, sampleRate: sr, text }
+    } catch (err) {
+      console.error(`[processor] pre-synth failed:`, err.message)
+      return null
+    }
+  })()
+}
+
+export async function consumePreSynth() {
+  if (!_preSynthPromise) return null
+  const result = await _preSynthPromise
+  _preSynthPromise = null
+  _pendingContinuation = null
+  if (!result) return null
+  const fromRate = result.sampleRate || SAMPLE_RATE_TTS_FALLBACK
+  const resampled = resampleAudio(result.audio, fromRate, SAMPLE_RATE_DISCORD)
+  return { audio: resampled, text: result.text }
+}
+
 export function setCharacterCard(card) {
   const d = card.spec === 'chara_card_v2' ? card.data : card
   const name = d.name || 'the character'
@@ -122,7 +181,20 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   return resampled
 }
 
-export async function processTranscript(rawText, confidence, userId, signal, username = null) {
+function splitSentences(text) {
+  const parts = text.match(/[^.!?]+[.!?]+(\s+|$)|[^.!?]+$/g)
+  if (!parts) return [text]
+  const out = []
+  let buf = ''
+  for (const p of parts) {
+    buf += p
+    if (buf.length >= 25 || /[.!?]\s*$/.test(buf)) { out.push(buf.trim()); buf = '' }
+  }
+  if (buf.trim()) out.push(buf.trim())
+  return out.filter(Boolean)
+}
+
+export async function processTranscript(rawText, confidence, userId, signal, username = null, onChunk = null) {
   const t0 = Date.now()
   const speaker = username || `user${String(userId).slice(-4)}`
   const tag = `uid=${userId} (${speaker})`
@@ -149,14 +221,24 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ Ollama unavailable`); return null }
 
-  const prompt = buildPromptWithHistory(userText, speaker)
-  console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length}`)
+  const cached = _speculativeCache.get(userId)
+  let responseText
+  let genMs
   const tGen = Date.now()
-  let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal))
+  if (cached && cached.userText === userText && cached.resultPromise) {
+    console.log(`[pipe] ${tag} 🎯 speculative LLM hit`)
+    responseText = await cached.resultPromise
+    _speculativeCache.delete(userId)
+    genMs = Date.now() - tGen
+  } else {
+    const prompt = buildPromptWithHistory(userText, speaker)
+    console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length}`)
+    responseText = await generateLLM(prompt, characterSystemPrompt || undefined, signal)
+    genMs = Date.now() - tGen
+  }
   const nextTurn = responseText.search(/\n\s*[A-Za-z`][\w`.\-]{0,30}\s*:/)
   if (nextTurn >= 0) responseText = responseText.slice(0, nextTurn)
   responseText = responseText.trim()
-  const genMs = Date.now() - tGen
   console.log(`[pipe] ${tag} ✓ generate ${genMs}ms → "${responseText}"`)
   if (!responseText) return null
   if (signal?.aborted) return null
@@ -171,12 +253,34 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   const ttsMs = Date.now() - tTts
   if (!ttsAudio || ttsAudio.length === 0) throw new Error(`step=synthesize ${tag}: empty output`)
   if (signal?.aborted) return null
-
   const fromRate = ttsSampleRate || SAMPLE_RATE_TTS_FALLBACK
   const resampled = resampleAudio(ttsAudio, fromRate, SAMPLE_RATE_DISCORD)
+  if (onChunk) onChunk(resampled)
   const totalMs = Date.now() - t0
   console.log(`[pipe] ${tag} ✅ complete ${totalMs}ms (llm=${genMs} tts=${ttsMs}) → ${resampled.length} samples`)
+  resampled._text = responseText
   return resampled
+}
+
+const _speculativeCache = new Map()
+
+export function startSpeculativeGenerate(userId, userText, username) {
+  if (!userText || userText.length < 8) return
+  const cached = _speculativeCache.get(userId)
+  if (cached && cached.userText === userText) return
+  if (cached && cached.abort) cached.abort.abort()
+  const speaker = username || `user${String(userId).slice(-4)}`
+  const prompt = buildPromptWithHistory(userText, speaker)
+  const abort = new AbortController()
+  const resultPromise = generateLLM(prompt, characterSystemPrompt || undefined, abort.signal).catch(() => null)
+  _speculativeCache.set(userId, { userText, abort, resultPromise })
+  console.log(`[processor] 🔮 speculative LLM uid=${userId} on "${userText.slice(0,40)}"`)
+}
+
+export function cancelSpeculative(userId) {
+  const c = _speculativeCache.get(userId)
+  if (c?.abort) c.abort.abort()
+  _speculativeCache.delete(userId)
 }
 
 export function clearHistory() { recentHistory.length = 0; console.log('[processor] history cleared') }
