@@ -9,7 +9,7 @@ async function initPipeline() {
 
   pipelineInitPromise = (async () => {
     try {
-      whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', { quantized: true })
+      whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { quantized: true })
       return whisperPipeline
     } catch (err) {
       pipelineInitPromise = null
@@ -49,7 +49,14 @@ export async function transcribe(pcmBuffer, sampleRate = 48000) {
   }
 
   try {
-    const result = await asr(resampled, { chunk_length_s: 30, stride_length_s: 5 })
+    const result = await asr(resampled, {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+      language: 'english',
+      task: 'transcribe',
+      no_speech_threshold: 0.6,
+      condition_on_previous_text: false,
+    })
     const confidence = Math.min(1.0, result.text.length / 100.0)
     return { text: result.text || '[no speech detected]', confidence: Math.max(0, Math.min(1, confidence)) }
   } catch (err) {

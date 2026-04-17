@@ -1,4 +1,6 @@
 import { transcribe } from './discord-whisper.js'
+import fs from 'fs'
+import { encodeWAV } from './server-utils.mjs'
 
 const SAMPLE_RATE = 48000
 const DEBOUNCE_MS = 600
@@ -84,10 +86,21 @@ export async function finalizeAndClear(userId) {
   if (s.chunks.length === 0) return { text: s.latestText, confidence: s.latestConf }
   const pcmBuffer = chunksToPcmBuffer(s.chunks)
   const totalSamples = s.totalSamples
+  const dumpChunks = s.chunks.slice()
   clear(userId)
   try {
     const result = await transcribe(pcmBuffer, SAMPLE_RATE)
     const text = (result.text || '').trim()
+    try {
+      const total = dumpChunks.reduce((a,c) => a + c.length, 0)
+      const merged = new Float32Array(total)
+      let off = 0
+      for (const c of dumpChunks) { merged.set(c, off); off += c.length }
+      const wav = encodeWAV(merged, SAMPLE_RATE)
+      const path = `debug-${userId}-${Date.now()}.wav`
+      fs.writeFileSync(path, wav)
+      console.log(`[stream] uid=${userId} 🎧 dumped ${path} (${(wav.length/1024).toFixed(1)}KB)`)
+    } catch (e) { console.error('[stream] dump fail:', e.message) }
     console.log(`[stream] uid=${userId} finalize samples=${totalSamples} → "${text.slice(0,80)}"`)
     return { text, confidence: result.confidence }
   } catch (err) {
