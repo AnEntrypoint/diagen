@@ -1,5 +1,5 @@
 import { ChannelType } from 'discord.js'
-import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './discord-bot-client.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice, lastVoiceCloseCode } from './discord-bot-client.js'
 import { initVoicePlayer } from 'dispipe/voice'
 import { onPcmChunk, init as initVad, getBuffers } from './discord-vad.js'
 
@@ -20,10 +20,11 @@ async function initDiscordBot(onUserAudio, onCommand, onReady) {
   _onCommand = onCommand
   discordClient = createClient()
 
+  let onReadyCalled = false
   discordClient.on('ready', () => {
     console.log('[discord] ✓ Bot ready - logged in as', discordClient.user.tag, `(ID: ${discordClient.user.id})`)
     isConnected = true
-    if (onReady) onReady()
+    if (onReady && !onReadyCalled) { onReadyCalled = true; onReady() }
   })
 
   discordClient.on('error', (err) => {
@@ -121,6 +122,8 @@ function getDebugState() {
     guildId: currentChannelState.guildId,
     channelId: currentChannelState.channelId,
     lastError: lastError.value,
+    lastVoiceCloseCode: lastVoiceCloseCode.value,
+    lastVoiceCloseReason: lastVoiceCloseCode.reason,
     messageCount,
     processingQueue,
     activeListeners: [...getBuffers().keys()],

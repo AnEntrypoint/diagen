@@ -207,7 +207,7 @@ app.post('/api/discord/voice/connect', async (req, res) => {
     }
     console.log('[api] Voice connect request for guild', guildId, 'channel', channelId)
     const connectPromise = connectToVoiceChannel(guildId, channelId)
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout after 30s - likely Discord auth failure')), 30000))
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout after 90s')), 90000))
     await Promise.race([connectPromise, timeoutPromise])
     res.json({ success: true })
   } catch (err) {
