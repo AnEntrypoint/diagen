@@ -3,7 +3,7 @@ import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from '
 import { initVoicePlayer } from 'dispipe/voice'
 
 const lastVoiceCloseCode = { value: null, reason: null }
-import { onPcmChunk, init as initVad, getBuffers } from './discord-vad.js'
+import { onPcmChunk, init as initVad, getBuffers, setUsernameResolver } from './discord-vad.js'
 
 let discordClient = null
 let isConnected = false
@@ -83,12 +83,21 @@ async function connectToVoiceChannel(guildId, channelId) {
   initVoicePlayer(voiceConnection)
 
   const subscribedUsers = new Set()
-  voiceReceiver.speaking.on('start', (userId) => {
+  const usernames = new Map()
+  setUsernameResolver((uid) => usernames.get(uid) || `user${String(uid).slice(-4)}`)
+  voiceReceiver.speaking.on('start', async (userId) => {
     if (userId === discordClient.user.id) return
+    if (!usernames.has(userId)) {
+      try {
+        const guild = await discordClient.guilds.fetch(currentChannelState.guildId)
+        const m = await guild.members.fetch(userId)
+        usernames.set(userId, m.nickname || m.displayName || m.user.globalName || m.user.username)
+      } catch {}
+    }
     if (subscribedUsers.has(userId)) return
     subscribedUsers.add(userId)
     subscribeToSpeaker(userId, onPcmChunk)
-    console.log(`[voice] subscribed to speaker ${userId}`)
+    console.log(`[voice] subscribed to speaker ${userId} (${usernames.get(userId)||'?'})`)
   })
 
   const guild = await discordClient.guilds.fetch(guildId)
@@ -97,10 +106,12 @@ async function connectToVoiceChannel(guildId, channelId) {
   if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
     for (const member of channel.members.values()) {
       console.log(`[voice] channel member: ${member.id} bot=${member.user.bot} name=${member.user.username}`)
+      const displayName = member.nickname || member.displayName || member.user.globalName || member.user.username
+      usernames.set(member.id, displayName)
       if (!member.user.bot && !subscribedUsers.has(member.id)) {
         subscribedUsers.add(member.id)
         subscribeToSpeaker(member.id, onPcmChunk)
-        console.log(`[voice] pre-subscribed to ${member.id}`)
+        console.log(`[voice] pre-subscribed to ${member.id} (${displayName})`)
       }
     }
   }
