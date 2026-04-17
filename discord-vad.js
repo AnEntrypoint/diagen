@@ -14,7 +14,7 @@ const SAMPLE_RATE = 48000
 const BOT_SPEAK_TAIL_MS = 250
 const PREROLL_MS = 500
 const PREROLL_SAMPLES = SAMPLE_RATE * PREROLL_MS / 1000
-const MIN_PEAK_RMS = 0.015
+const MIN_PEAK_RMS = 0.008
 
 const userBuffers = new Map()
 let _processingQueue = null
@@ -130,27 +130,40 @@ export function onPcmChunk(userId, stereoF32) {
   for (let i = 0; i < monoLen; i++) f32[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
 
   const buf = getOrCreateBuffer(userId)
-  if (buf.processing) return
 
   const level = rms(f32)
   const effectiveThreshold = botSpeaking ? INTERRUPT_THRESHOLD : SILENCE_THRESHOLD_BASE
   const isSpeech = level > effectiveThreshold
 
+  pushFrame(userId, f32)
+
+  if (buf.processing) {
+    if (isSpeech && level > INTERRUPT_THRESHOLD) {
+      console.log(`[vad] 🗣️ uid=${userId} speaking while processing rms=${level.toFixed(4)} — captured to stream`)
+    }
+    return
+  }
+
+  buf.preroll.push(f32)
+  buf.prerollSamples += f32.length
+  while (buf.prerollSamples > PREROLL_SAMPLES && buf.preroll.length > 1) {
+    const dropped = buf.preroll.shift()
+    buf.prerollSamples -= dropped.length
+  }
+
   if (!buf.capturing) {
     if (!isSpeech) return
     buf.capturing = true
-    buf.startTime = now
+    buf.startTime = now - (buf.prerollSamples / SAMPLE_RATE * 1000)
     buf.lastVoiceTime = now
     buf.peakRms = level
-    console.log(`[vad] 🎤 speech-start uid=${userId} rms=${level.toFixed(4)} botSpeaking=${botSpeaking}`)
+    console.log(`[vad] 🎤 speech-start uid=${userId} rms=${level.toFixed(4)} botSpeaking=${botSpeaking} preroll=${(buf.prerollSamples/SAMPLE_RATE*1000).toFixed(0)}ms`)
   } else {
     if (isSpeech) {
       if (level > buf.peakRms) buf.peakRms = level
       buf.lastVoiceTime = now
     }
   }
-
-  pushFrame(userId, f32)
 
   const utteranceDuration = now - buf.startTime
   const silenceDuration = now - buf.lastVoiceTime
@@ -163,12 +176,16 @@ export function onPcmChunk(userId, stereoF32) {
     clearStream(userId)
     buf.capturing = false
     buf.peakRms = 0
+    buf.preroll = []
+    buf.prerollSamples = 0
     return
   }
 
   const peak = buf.peakRms
   buf.capturing = false
   buf.peakRms = 0
+  buf.preroll = []
+  buf.prerollSamples = 0
 
   if (botSpeaking) {
     console.log(`[vad] ⚡ INTERRUPT uid=${userId} dur=${utteranceDuration}ms peak=${peak.toFixed(4)}`)
