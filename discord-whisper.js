@@ -56,6 +56,7 @@ export async function transcribe(pcmBuffer, sampleRate = 48000) {
       task: 'transcribe',
       no_speech_threshold: 0.6,
       condition_on_previous_text: false,
+      initial_prompt: 'Cleetus, the gas station owner, talking with customers.',
     })
     const confidence = Math.min(1.0, result.text.length / 100.0)
     return { text: result.text || '[no speech detected]', confidence: Math.max(0, Math.min(1, confidence)) }

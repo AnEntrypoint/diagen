@@ -92,7 +92,7 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
       const base = Math.max(_botSpeakingUntil, Date.now())
       _botSpeakingUntil = base + durMs + BOT_SPEAK_TAIL_MS
       pushAudioFrame(stereo)
-      if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms dur=${durMs.toFixed(0)}ms`) }
+      if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms dur=${durMs.toFixed(0)}ms`); clearStream(userId) }
     }
     const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk, preambleUsed)
     if (!monoOut || abort.signal.aborted) {
@@ -135,11 +135,11 @@ export function onPcmChunk(userId, stereoF32) {
   const effectiveThreshold = botSpeaking ? INTERRUPT_THRESHOLD : SILENCE_THRESHOLD_BASE
   const isSpeech = level > effectiveThreshold
 
-  pushFrame(userId, f32)
+  if (!botSpeaking) pushFrame(userId, f32)
 
   if (buf.processing) {
     if (isSpeech && level > INTERRUPT_THRESHOLD) {
-      console.log(`[vad] 🗣️ uid=${userId} speaking while processing rms=${level.toFixed(4)} — captured to stream`)
+      console.log(`[vad] 🗣️ uid=${userId} speaking while processing rms=${level.toFixed(4)} (bot=${botSpeaking})`)
     }
     return
   }
