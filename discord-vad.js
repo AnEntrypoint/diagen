@@ -10,7 +10,6 @@ const SAMPLE_RATE = 48000
 const userBuffers = new Map()
 let _processingQueue = null
 let _lastError = null
-let _chunkCount = 0
 let _botSpeakingUntil = 0
 const BOT_SPEAK_TAIL_MS = 800
 
@@ -80,10 +79,6 @@ export function onPcmChunk(userId, stereoF32) {
   const now = Date.now()
   const level = rms(f32)
   const isSpeech = level > SILENCE_THRESHOLD
-  _chunkCount++
-  if (_chunkCount <= 10 || _chunkCount % 100 === 0) {
-    console.log(`[vad] chunk #${_chunkCount} userId=${userId} len=${f32.length} level=${level.toFixed(4)} speech=${isSpeech}`)
-  }
 
   if (isSpeech) {
     if (buf.chunks.length === 0) buf.startTime = now

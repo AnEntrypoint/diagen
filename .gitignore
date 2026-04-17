@@ -23,3 +23,8 @@ onnx-export-venv/
 encode_venv/
 *.err
 *.png
+
+.cache/
+.claude/
+.codeinsight
+.plugkit-browser-profile/
