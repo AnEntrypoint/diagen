@@ -40,7 +40,7 @@ function getVoiceReferenceText() {
   return voiceReferenceText
 }
 
-export async function processUserAudio(pcmBuffer, sampleRate, userId) {
+export async function processUserAudio(pcmBuffer, sampleRate, userId, signal) {
   if (!pcmBuffer || pcmBuffer.length === 0) throw new Error(`step=input userId=${userId}: empty audio buffer`)
   if (typeof sampleRate !== 'number' || sampleRate < 8000 || sampleRate > 48000) throw new Error(`step=validate userId=${userId}: sampleRate ${sampleRate} out of range`)
   if (!voiceReferencePath) throw new Error(`step=voiceEmbed userId=${userId}: no voice embedding loaded`)
@@ -50,6 +50,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
   const userText = transcription.text?.trim() || ''
   console.log(`[processor] userId=${userId} step=transcribe done: "${userText}" confidence=${transcription.confidence.toFixed(2)}`)
 
+  if (signal?.aborted) return null
   if (!userText || userText === '[no speech detected]' || userText.length < MIN_TRANSCRIPT_CHARS) {
     console.log(`[processor] userId=${userId} skip: no real speech transcribed`)
     return null
@@ -61,9 +62,10 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
   }
 
   console.log(`[processor] userId=${userId} step=generate start`)
-  const responseText = (await generateLLM(userText, characterSystemPrompt || undefined)).trim()
+  const responseText = (await generateLLM(userText, characterSystemPrompt || undefined, signal)).trim()
   console.log(`[processor] userId=${userId} step=generate done: "${responseText.slice(0, 80)}"`)
   if (!responseText) return null
+  if (signal?.aborted) return null
 
   const refText = getVoiceReferenceText()
   console.log(`[processor] userId=${userId} step=synthesize start (voice_clone=${Boolean(refText)})`)

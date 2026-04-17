@@ -1,7 +1,7 @@
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
 const MODEL = process.env.OLLAMA_MODEL || 'llama3.2:1b'
 
-export async function generate(prompt, system = 'You are a helpful assistant. Be concise.') {
+export async function generate(prompt, system = 'You are a helpful assistant. Be concise.', signal) {
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -13,6 +13,7 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
       ],
       stream: false,
     }),
+    signal,
   })
 
   if (!res.ok) {

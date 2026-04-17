@@ -12,8 +12,7 @@ let _processingQueue = null
 let _lastError = null
 let _botSpeakingUntil = 0
 const BOT_SPEAK_TAIL_MS = 800
-let _interruptChunks = null
-let _interruptUserId = null
+let _currentAbort = null
 
 export function init(processingQueue, lastErrorRef) {
   _processingQueue = processingQueue
@@ -48,11 +47,13 @@ async function handleUtterance(userId, chunks) {
   const pcmBuffer = Buffer.from(int16.buffer)
   console.log(`[voice] userId=${userId} utterance: ${(totalLen / SAMPLE_RATE).toFixed(1)}s, ${totalLen} samples`)
 
+  const abort = new AbortController()
+  _currentAbort = abort
   const entry = { userId, startTime: Date.now(), samples: totalLen }
   _processingQueue.push(entry)
   try {
-    const monoOut = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
-    if (!monoOut) return
+    const monoOut = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId, abort.signal)
+    if (!monoOut || abort.signal.aborted) return
     const stereo = new Float32Array(monoOut.length * 2)
     for (let i = 0; i < monoOut.length; i++) { stereo[i * 2] = monoOut[i]; stereo[i * 2 + 1] = monoOut[i] }
     const durationMs = (monoOut.length / SAMPLE_RATE) * 1000
@@ -61,17 +62,16 @@ async function handleUtterance(userId, chunks) {
     console.log(`[voice] userId=${userId} response sent: ${monoOut.length} mono samples, bot-speaking ${durationMs.toFixed(0)}ms`)
     for (const b of userBuffers.values()) b.chunks = []
   } catch (err) {
-    console.error(`[voice] userId=${userId} pipeline error: ${err.message}`)
-    _lastError.value = { message: err.message, timestamp: Date.now(), userId }
+    if (err.name !== 'AbortError') {
+      console.error(`[voice] userId=${userId} pipeline error: ${err.message}`)
+      _lastError.value = { message: err.message, timestamp: Date.now(), userId }
+    }
   } finally {
+    if (_currentAbort === abort) _currentAbort = null
     const idx = _processingQueue.indexOf(entry)
     if (idx !== -1) _processingQueue.splice(idx, 1)
-    if (_interruptChunks && _interruptUserId) {
-      const ic = _interruptChunks; const iu = _interruptUserId
-      _interruptChunks = null; _interruptUserId = null
-      console.log(`[voice] processing interrupt utterance from ${iu}`)
-      handleUtterance(iu, ic).finally(() => { const b = userBuffers.get(iu); if (b) b.processing = false })
-    }
+    const buf = userBuffers.get(userId)
+    if (buf) buf.processing = false
   }
 }
 
@@ -108,12 +108,14 @@ export function onPcmChunk(userId, stereoF32) {
   buf.chunks = []
 
   if (botSpeaking) {
+    console.log(`[voice] userId=${userId} interrupt — aborting current pipeline`)
     _botSpeakingUntil = 0
-    _interruptChunks = chunks; _interruptUserId = userId
-    console.log(`[voice] userId=${userId} interrupted bot — queued for immediate follow-up`)
+    if (_currentAbort) { _currentAbort.abort(); _currentAbort = null }
+    buf.processing = true
+    handleUtterance(userId, chunks)
     return
   }
 
   buf.processing = true
-  handleUtterance(userId, chunks).finally(() => { buf.processing = false })
+  handleUtterance(userId, chunks)
 }
