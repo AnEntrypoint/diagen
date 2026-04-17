@@ -1,4 +1,7 @@
 
+## [unreleased]
+- fix: on voice close code 4017, force gateway shard reconnect (recover=0) to get fresh session_id instead of waiting 10s with stale session
+
 ## 2026-04-17
 - Ported Discord voice to dispipe/client + dispipe/voice packages
 - Added discord-vad.js: stereo→mono downmix, RMS VAD, utterance buffering

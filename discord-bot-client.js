@@ -88,8 +88,6 @@ async function joinDiscordVoice(client, guildId, channelId) {
   if (perms && !perms.has('Connect')) throw new Error(`Bot lacks CONNECT permission in channel ${channelId}`)
 
   _destroyExisting(guildId)
-  try { for (const shard of client.ws.shards.values()) shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } }) } catch(e) {}
-  await new Promise(r => setTimeout(r, 2000))
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     console.log(`[discord] join attempt ${attempt}: guild=${guildId} channel=${channelId}`)
@@ -103,9 +101,15 @@ async function joinDiscordVoice(client, guildId, channelId) {
       console.log(`[discord] attempt ${attempt} failed: ${err.message} closeCode=${err.closeCode}`)
       if (attempt === 8) throw new Error(`Voice join failed after 8 attempts: ${err.message}`)
       _destroyExisting(guildId)
-      const delay = err.closeCode === 4017 ? 10000 : 4000
-      console.log(`[discord] waiting ${delay}ms before retry...`)
-      await new Promise(r => setTimeout(r, delay))
+      if (err.closeCode === 4017) {
+        console.log('[discord] 4017: forcing gateway reconnect for fresh session_id')
+        await client.ws._ws.destroy({ recover: 0 })
+        await new Promise(r => client.once('shardReady', r))
+        console.log('[discord] gateway reconnected, new session_id ready')
+      } else {
+        console.log('[discord] waiting 4000ms before retry...')
+        await new Promise(r => setTimeout(r, 4000))
+      }
     }
   }
 }

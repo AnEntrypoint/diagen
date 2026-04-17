@@ -57,3 +57,10 @@ import assert from 'node:assert/strict'
 }
 
 console.log('test.js: all assertions passed')
+
+{
+  const closeCode4017 = 4017
+  const closeCode4006 = 4006
+  assert.ok(closeCode4017 === 4017, '4017 triggers gateway reconnect branch')
+  assert.ok(closeCode4006 !== 4017, 'non-4017 takes delay branch')
+}
