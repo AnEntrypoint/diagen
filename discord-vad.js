@@ -51,6 +51,7 @@ async function handleUtterance(userId, chunks) {
   _processingQueue.push(entry)
   try {
     const monoOut = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
+    if (!monoOut) return
     const stereo = new Float32Array(monoOut.length * 2)
     for (let i = 0; i < monoOut.length; i++) { stereo[i * 2] = monoOut[i]; stereo[i * 2 + 1] = monoOut[i] }
     const durationMs = (monoOut.length / SAMPLE_RATE) * 1000
