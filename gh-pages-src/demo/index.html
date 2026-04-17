@@ -194,6 +194,17 @@
     }
     #persona-btn:hover:not(:disabled) { background: #2d2d3f }
     #persona-btn:disabled { color: #555; cursor: not-allowed }
+    #card-load-btn {
+      background: none;
+      border: 1px solid #2d2d3f;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      color: #888;
+      transition: background 0.15s;
+    }
+    #card-load-btn:hover { background: #2d2d3f; color: #e8e8f0 }
   </style>
 </head>
 <body>
@@ -209,7 +220,7 @@
     <select id="voice-select"></select>
   </div>
   <div id="character-wrap">
-    <label for="character-sheet">NPC identity <button id="sheet-mic-btn" title="Describe changes by voice">🎤</button></label>
+    <label for="character-sheet">NPC identity <button id="sheet-mic-btn" title="Describe changes by voice">🎤</button><button id="card-load-btn" title="Load SillyTavern character card (.json)">Load Card</button><input type="file" id="card-file" accept=".json" hidden></label>
     <textarea id="character-sheet" placeholder="Describe who this NPC is — name, role in the world, personality, and how they speak. They are a character in a game, not an AI."></textarea>
     <button id="persona-btn" disabled>Lock In Character</button>
   </div>

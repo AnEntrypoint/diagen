@@ -100,6 +100,12 @@ export function waitForTTS() {
   if (!ttsLoading) return Promise.resolve(false)
   return new Promise(resolve => { ttsReadyResolvers.push(resolve) })
 }
+export function stopSpeak() {
+  stopMouthTick()
+  if (audioCtx) { audioCtx.suspend(); nextAt = 0 }
+  if (ttsStreamReject) { const rej = ttsStreamReject; ttsStreamResolve = null; ttsStreamReject = null; rej(new Error('interrupted')) }
+  ttsWorker.postMessage({ type: 'cancel' })
+}
 export async function speak(text) {
   if (ttsLoading && !ttsReady) $('status').textContent = 'TTS loading… (first run takes ~1 min)'
   const ready = await waitForTTS()

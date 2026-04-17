@@ -1,5 +1,5 @@
 import { initVRM, setVRMPaused } from './vrm-viewer.js'
-import { startTTS, isTtsReady, onVoiceChange, speak } from './app-tts.js?v=5'
+import { startTTS, isTtsReady, onVoiceChange, speak, stopSpeak } from './app-tts.js?v=5'
 import { buildPersonaHistory } from './app-persona.js'
 
 const worker = new Worker('./worker.js?v=65', { type: 'module' })
@@ -73,8 +73,14 @@ async function loadModel() {
 	} catch (err) { modelLoadDone = true; $('progress-wrap').hidden = true; $('status').textContent = `Model load failed: ${err.message} — mic still available` }
 	startTTS()
 }
+function interrupt() {
+	stopSpeak()
+	Object.values(pendingResolvers).forEach(r => r.reject(new Error('interrupted')))
+	Object.keys(pendingResolvers).forEach(k => delete pendingResolvers[k])
+}
 $('speak-btn').addEventListener('click', async () => {
-	if (appState === 'generating' || appState === 'speaking' || appState === 'recording') return
+	if (appState === 'generating' || appState === 'speaking') interrupt()
+	if (appState === 'recording') return
 	setState('recording')
 	let transcript = ''
 	try { transcript = await startRecognition() } catch (err) { $('status').textContent = `Mic error: ${err.message}`; setState(modelReady ? 'idle' : (modelLoadDone ? 'idle' : 'mic_only')); return }
@@ -99,8 +105,8 @@ $('speak-btn').addEventListener('click', async () => {
 		const cleaned = text.trim(); history.push({ role: 'assistant', content: cleaned })
 		const last = $('chat').querySelector('.bubble.assistant:last-child'); if (last) last.textContent = cleaned
 		setState('speaking'); setVRMPaused(false); await speak(cleaned)
-	} catch (err) { setVRMPaused(false); $('status').textContent = `Error: ${err.message}` }
-	setState('idle')
+	} catch (err) { setVRMPaused(false); if (err.message !== 'interrupted') $('status').textContent = `Error: ${err.message}` }
+	if (appState !== 'recording') setState('idle')
 })
 $('sheet-mic-btn').addEventListener('click', async () => {
 	if (appState === 'generating' || appState === 'speaking' || appState === 'recording') return
@@ -123,6 +129,21 @@ $('persona-btn').addEventListener('click', async () => {
 	await sendWorker({ type: 'reset' }); personaPrefill = null
 	$('persona-btn').textContent = `Character locked (${personaHistory.length / 2} turns)`
 	$('persona-btn').disabled = false
+})
+$('card-load-btn').addEventListener('click', () => $('card-file').click())
+$('card-file').addEventListener('change', (e) => {
+	const file = e.target.files[0]; if (!file) return
+	const reader = new FileReader()
+	reader.onload = (ev) => {
+		try {
+			const raw = JSON.parse(ev.target.result)
+			const d = raw.spec === 'chara_card_v2' ? raw.data : raw
+			const parts = [d.name && `Name: ${d.name}`, d.description, d.personality && `Personality: ${d.personality}`, d.scenario && `Scenario: ${d.scenario}`].filter(Boolean)
+			$('character-sheet').value = parts.join('\n\n')
+			personaHistory = []; personaPrefill = null; personaDesc = ''; $('persona-btn').textContent = 'Lock In Character'
+		} catch { $('status').textContent = 'Invalid card JSON' }
+	}
+	reader.readAsText(file); e.target.value = ''
 })
 $('voice-select').addEventListener('change', () => onVoiceChange($('voice-select').value))
 loadModel()
