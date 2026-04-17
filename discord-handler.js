@@ -82,8 +82,11 @@ async function connectToVoiceChannel(guildId, channelId) {
 
   initVoicePlayer(voiceConnection)
 
+  const subscribedUsers = new Set()
   voiceReceiver.speaking.on('start', (userId) => {
     if (userId === discordClient.user.id) return
+    if (subscribedUsers.has(userId)) return
+    subscribedUsers.add(userId)
     subscribeToSpeaker(userId, onPcmChunk)
     console.log(`[voice] subscribed to speaker ${userId}`)
   })
@@ -94,7 +97,8 @@ async function connectToVoiceChannel(guildId, channelId) {
   if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
     for (const member of channel.members.values()) {
       console.log(`[voice] channel member: ${member.id} bot=${member.user.bot} name=${member.user.username}`)
-      if (!member.user.bot) {
+      if (!member.user.bot && !subscribedUsers.has(member.id)) {
+        subscribedUsers.add(member.id)
         subscribeToSpeaker(member.id, onPcmChunk)
         console.log(`[voice] pre-subscribed to ${member.id}`)
       }
