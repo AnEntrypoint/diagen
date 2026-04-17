@@ -10,10 +10,11 @@ Discord voice → dispipe/client → discord-vad.js → Whisper STT → Ollama L
 
 **Modules:**
 - `discord-handler.js` — bot lifecycle, voice channel join, message commands
-- `discord-vad.js` — stereo→mono downmix, RMS VAD, utterance buffering, pipeline dispatch
+- `discord-vad.js` — RMS VAD, utterance buffering, mono→stereo upmix for dispipe, pipeline dispatch
 - `discord-voice-processor.js` — STT → LLM → TTS pipeline, returns Float32Array at 48kHz
 - `discord-whisper.js` — Whisper STT via @xenova/transformers
 - `omnivoice-tts-bridge.js` — OmniVoice Python subprocess bridge
+- `omnivoice_tts_server.py` — Python TTS server (spawned via uv run)
 - `llm-ollama.js` — Ollama LLM integration
 
 ## Setup
