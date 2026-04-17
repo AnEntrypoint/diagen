@@ -102,10 +102,11 @@ async function joinDiscordVoice(client, guildId, channelId) {
       if (attempt === 8) throw new Error(`Voice join failed after 8 attempts: ${err.message}`)
       _destroyExisting(guildId)
       if (err.closeCode === 4017) {
-        console.log('[discord] 4017: forcing gateway reconnect for fresh session_id')
-        await client.ws._ws.destroy({ recover: 0 })
+        console.log('[discord] 4017: forcing shard reconnect for fresh session_id')
+        const shard = client.ws._ws.strategy.shards.first()
+        await shard.destroy({ recover: 0, reason: 'voice 4017' })
         await new Promise(r => client.once('shardReady', r))
-        console.log('[discord] gateway reconnected, new session_id ready')
+        console.log('[discord] shard reconnected, new session_id ready')
       } else {
         console.log('[discord] waiting 4000ms before retry...')
         await new Promise(r => setTimeout(r, 4000))
