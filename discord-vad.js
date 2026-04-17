@@ -63,17 +63,14 @@ export function onPcmChunk(userId, f32) {
   const buf = getOrCreateBuffer(userId)
   if (buf.processing) return
 
-  const mono = new Float32Array(f32.length / 2)
-  for (let i = 0; i < mono.length; i++) mono[i] = (f32[i * 2] + f32[i * 2 + 1]) / 2
-
   const now = Date.now()
-  const level = rms(mono)
+  const level = rms(f32)
   const isSpeech = level > SILENCE_THRESHOLD
 
   if (isSpeech) {
     if (buf.chunks.length === 0) buf.startTime = now
     buf.lastVoiceTime = now
-    buf.chunks.push(mono)
+    buf.chunks.push(f32)
   }
 
   if (buf.chunks.length === 0) return

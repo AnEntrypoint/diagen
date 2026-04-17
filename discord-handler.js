@@ -1,5 +1,5 @@
 import { ChannelType } from 'discord.js'
-import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from 'dispipe/client'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './discord-bot-client.js'
 import { initVoicePlayer } from 'dispipe/voice'
 import { onPcmChunk, init as initVad, getBuffers } from './discord-vad.js'
 
