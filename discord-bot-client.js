@@ -4,6 +4,7 @@ import prism from 'prism-media'
 
 let voiceConnection = null
 let voiceReceiver = null
+let _client = null
 export const lastVoiceCloseCode = { value: null, reason: null }
 
 function createClient() {
@@ -14,43 +15,40 @@ function createClient() {
 
 function _destroyExisting(guildId) {
   const existing = getVoiceConnection(guildId)
-  if (existing) {
-    console.log('[discord] destroying existing voice connection for guild', guildId)
-    try { existing.destroy() } catch {}
-  }
-  if (voiceConnection && voiceConnection !== existing) {
-    try { voiceConnection.destroy() } catch {}
-  }
+  if (existing) try { existing.destroy() } catch {}
+  if (voiceConnection && voiceConnection !== existing) try { voiceConnection.destroy() } catch {}
   voiceConnection = null
   voiceReceiver = null
 }
 
-async function _tryJoin(channel, guild, attempt) {
-  console.log(`[discord] join attempt ${attempt}: guild=${guild.id}, channel=${channel.id}, channelType=${channel.type}`)
+async function _tryJoin(channel, guild) {
   const conn = joinVoiceChannel({
     channelId: channel.id,
     guildId: guild.id,
     adapterCreator: guild.voiceAdapterCreator,
     selfDeaf: false,
     selfMute: false,
-    debug: true,
+    debug: false,
     daveEncryption: false,
   })
-  conn.packets.state = undefined
-  const origAddStatePacket = conn.addStatePacket.bind(conn)
+
   conn.addStatePacket = (packet) => {
-    console.log(`[discord] addStatePacket session_id=${packet.session_id} channel_id=${packet.channel_id}`)
-    origAddStatePacket(packet)
+    console.log(`[discord] VOICE_STATE_UPDATE session_id=${packet.session_id} channel_id=${packet.channel_id}`)
+    conn.packets.state = packet
+    if (packet.self_deaf !== undefined) conn.joinConfig.selfDeaf = packet.self_deaf
+    if (packet.self_mute !== undefined) conn.joinConfig.selfMute = packet.self_mute
+    if (packet.channel_id) conn.joinConfig.channelId = packet.channel_id
   }
+
   const origAddServerPacket = conn.addServerPacket.bind(conn)
   conn.addServerPacket = (packet) => {
     conn.packets.server = packet
     if (packet.endpoint) {
-      console.log(`[discord] addServerPacket endpoint=${packet.endpoint}, delaying configureNetworking 500ms for fresh session_id`)
+      console.log(`[discord] VOICE_SERVER_UPDATE endpoint=${packet.endpoint}, waiting 600ms for fresh VOICE_STATE_UPDATE...`)
       setTimeout(() => {
-        console.log(`[discord] configureNetworking with session_id=${conn.packets.state?.session_id}`)
+        console.log(`[discord] configureNetworking session_id=${conn.packets.state?.session_id}`)
         conn.configureNetworking()
-      }, 500)
+      }, 600)
     } else {
       origAddServerPacket(packet)
     }
@@ -64,116 +62,86 @@ async function _tryJoin(channel, guild, attempt) {
         const code = typeof evt === 'object' ? (evt.code ?? evt) : evt
         const reason = typeof evt === 'object' ? evt.reason : ''
         closeCode = code; lastVoiceCloseCode.value = code; lastVoiceCloseCode.reason = reason?.toString?.() || ''
-        console.log('[discord] voice WS closed, code:', code, 'reason:', reason?.toString?.() || '(none)')
+        console.log('[discord] voice WS closed, code:', code)
       })
     }
     const oldCode = oldState.networking?.state?.code, newCode = newState.networking?.state?.code
-    if (oldCode !== newCode) console.log(`[discord] networking: ${netNames[oldCode] ?? oldCode ?? '?'} -> ${netNames[newCode] ?? newCode ?? '?'}`)
+    if (oldCode !== newCode) console.log(`[discord] networking: ${netNames[oldCode] ?? '?'} -> ${netNames[newCode] ?? '?'}`)
   })
 
   try {
-    await entersState(conn, VoiceConnectionStatus.Ready, 15_000)
+    await entersState(conn, VoiceConnectionStatus.Ready, 20_000)
     console.log('[discord] voice connection Ready')
     return conn
   } catch (err) {
     try { conn.destroy() } catch {}
-    const errMsg = err.message || String(err)
-    const finalErr = Object.assign(
-      new Error(`Join failed after ${attempt} attempt(s): ${errMsg}${closeCode ? ` (closeCode=${closeCode})` : ''}`),
-      { closeCode }
-    )
-    throw finalErr
+    throw Object.assign(new Error(err.message || String(err)), { closeCode })
   }
 }
 
-async function _sendLeaveAndWait(client, guildId, waitMs = 8000) {
-  const botId = client.user?.id
+async function _leaveAndWaitChannelNull(guildId, waitMs = 6000) {
   _destroyExisting(guildId)
-  try { await client.rest.patch(`/guilds/${guildId}/members/@me`, { body: { channel_id: null } }) } catch (e) { console.log('[discord] REST leave error:', e.message) }
-  try { for (const shard of client.ws.shards.values()) shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } }) } catch (e) {}
+  const client = _client
+  const botId = client?.user?.id
+  try { await client.rest.patch(`/guilds/${guildId}/members/@me`, { body: { channel_id: null } }) } catch(e) {}
+  try { for (const shard of client.ws.shards.values()) shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } }) } catch(e) {}
   await new Promise(r => {
     const onVoiceState = (oldState, newState) => {
       const memberId = newState.member?.user?.id ?? newState.member?.id
       if (newState.guild?.id === guildId && newState.channelId === null && (!botId || memberId === botId)) {
-        client.off('voiceStateUpdate', onVoiceState); clearTimeout(timer); r()
+        client.off('voiceStateUpdate', onVoiceState); clearTimeout(timer)
+        console.log('[discord] leave confirmed, fresh session_id will come on rejoin')
+        r()
       }
     }
-    const timer = setTimeout(() => { client.off('voiceStateUpdate', onVoiceState); r() }, waitMs)
+    const timer = setTimeout(() => { client.off('voiceStateUpdate', onVoiceState); console.log('[discord] leave wait timeout'); r() }, waitMs)
     client.on('voiceStateUpdate', onVoiceState)
   })
-}
-
-async function _reconnectShard(client) {
-  for (const shard of client.ws.shards.values()) try { shard.destroy({ recover: 0 }) } catch {}
-  await new Promise(r => { client.once('ready', r); setTimeout(r, 20000) })
+  await new Promise(r => setTimeout(r, 500))
 }
 
 async function joinDiscordVoice(client, guildId, channelId) {
-  let guild = client.guilds.cache.get(guildId)
-  if (!guild) guild = await client.guilds.fetch(guildId)
+  _client = client
+  let guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
   if (!guild) throw new Error(`Guild ${guildId} not found`)
 
   let channel = guild.channels.cache.get(channelId)
-  if (!channel) {
-    await guild.channels.fetch()
-    channel = guild.channels.cache.get(channelId)
-  }
+  if (!channel) { await guild.channels.fetch(); channel = guild.channels.cache.get(channelId) }
   if (!channel) throw new Error(`Channel ${channelId} not found`)
 
   const me = guild.members.cache.get(client.user.id) || await guild.members.fetch(client.user.id)
   const perms = channel.permissionsFor(me)
   if (perms && !perms.has('Connect')) throw new Error(`Bot lacks CONNECT permission in channel ${channelId}`)
 
-  const botMember = guild.members.cache.get(client.user.id)
-  if (botMember?.voice?.channelId != null || getVoiceConnection(guildId)) {
-    await _sendLeaveAndWait(client, guildId, 4000)
-  } else {
-    _destroyExisting(guildId)
-    try { await client.rest.patch(`/guilds/${guildId}/members/@me`, { body: { channel_id: null } }) } catch(e) {}
-    await new Promise(r => setTimeout(r, 1000))
-  }
+  await _leaveAndWaitChannelNull(guildId)
 
   for (let attempt = 1; attempt <= 5; attempt++) {
+    console.log(`[discord] join attempt ${attempt}: guild=${guild.id} channel=${channel.id}`)
     try {
-      voiceConnection = await _tryJoin(channel, guild, attempt)
+      voiceConnection = await _tryJoin(channel, guild)
       voiceReceiver = voiceConnection.receiver
-      voiceConnection.on(VoiceConnectionStatus.Disconnected, () => {
-        console.log('[discord] voice disconnected')
-      })
-      console.log('[discord] ✓ Voice connection successful!')
+      voiceConnection.on(VoiceConnectionStatus.Disconnected, () => console.log('[discord] voice disconnected'))
+      console.log('[discord] ✓ Voice connection established!')
       return { voiceConnection, voiceReceiver }
     } catch (err) {
-      console.log(`[discord] attempt ${attempt} failed: ${err.message}, closeCode=${err.closeCode}`)
-      if (attempt === 5) throw new Error(`Voice join failed after 5 attempts, last closeCode=${err.closeCode}: ${err.message}`)
-      if (err.closeCode === 4017) {
-        console.log('[discord] 4017 invalid session — forcing gateway reconnect for fresh session_id')
-        _destroyExisting(guildId)
-        await _reconnectShard(client)
-        guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
-        channel = guild.channels.cache.get(channelId)
-        if (!channel) { await guild.channels.fetch(); channel = guild.channels.cache.get(channelId) }
-      } else {
-        _destroyExisting(guildId)
-        console.log(`[discord] retrying in 3s...`)
-        await new Promise(r => setTimeout(r, 3000))
-      }
+      console.log(`[discord] attempt ${attempt} failed: ${err.message} closeCode=${err.closeCode}`)
+      if (attempt === 5) throw new Error(`Voice join failed after 5 attempts: ${err.message}`)
+      console.log(`[discord] leaving and waiting for fresh session_id...`)
+      await _leaveAndWaitChannelNull(guildId)
+      guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
+      channel = guild.channels.cache.get(channelId)
+      if (!channel) { await guild.channels.fetch(); channel = guild.channels.cache.get(channelId) }
     }
   }
 }
 
 function subscribeToSpeaker(userId, onPcmChunk) {
   if (!voiceReceiver) return null
-
   const existing = voiceReceiver.subscriptions.get(userId)
   if (existing) return existing
-
-  const stream = voiceReceiver.subscribe(userId, {
-    end: { behavior: EndBehaviorType.Manual },
-  })
-
+  const stream = voiceReceiver.subscribe(userId, { end: { behavior: EndBehaviorType.Manual } })
   const decoder = new prism.opus.Decoder({ frameSize: 960, channels: 2, rate: 48000 })
   stream.pipe(decoder)
-
   decoder.on('data', (pcmBuf) => {
     const i16 = new Int16Array(pcmBuf.buffer, pcmBuf.byteOffset, pcmBuf.byteLength / 2)
     const monoLen = i16.length / 2
@@ -181,19 +149,13 @@ function subscribeToSpeaker(userId, onPcmChunk) {
     for (let i = 0; i < monoLen; i++) f32[i] = (i16[i * 2] + i16[i * 2 + 1]) / 2 / 32768
     onPcmChunk(userId, f32)
   })
-
   decoder.on('error', () => {})
   stream.on('close', () => decoder.destroy())
-
   return stream
 }
 
 function leaveVoice() {
-  if (voiceConnection) {
-    voiceConnection.destroy()
-    voiceConnection = null
-    voiceReceiver = null
-  }
+  if (voiceConnection) { voiceConnection.destroy(); voiceConnection = null; voiceReceiver = null }
 }
 
 export { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice }
