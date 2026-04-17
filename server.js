@@ -285,12 +285,15 @@ app.get('/debug/guild/:guildId/channel/:channelId', async (req, res) => {
 })
 
 async function start() {
-  await ensureModels()
-  await loadA2F()
+  const discordOnly = (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN) && process.env.DEMO !== '1'
+  if (!discordOnly) {
+    await ensureModels()
+    await loadA2F()
+  }
   await loadVoiceEmbedding()
 
   // Warm up TTS to avoid first-call timeout (model download ~5-10min)
-  if (process.env.WARMUP_TTS !== 'false') {
+  if (process.env.WARMUP_TTS !== 'false' && !discordOnly) {
     try {
       console.log('[server] Warming up OmniVoice TTS (first-time model download)...')
       const warmupStart = performance.now()
