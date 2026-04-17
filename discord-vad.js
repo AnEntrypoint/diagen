@@ -82,7 +82,7 @@ export function onPcmChunk(userId, stereoF32) {
   for (let i = 0; i < monoLen; i++) f32[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
 
   const buf = getOrCreateBuffer(userId)
-  if (buf.processing) return
+  if (buf.processing && !botSpeaking) return
 
   const now = Date.now()
   const level = rms(f32)
@@ -98,7 +98,8 @@ export function onPcmChunk(userId, stereoF32) {
 
   const utteranceDuration = now - buf.startTime
   const silenceDuration = now - buf.lastVoiceTime
-  const shouldFlush = silenceDuration >= SILENCE_DURATION_MS || utteranceDuration >= MAX_UTTERANCE_MS
+  const flushSilence = botSpeaking ? 300 : SILENCE_DURATION_MS
+  const shouldFlush = silenceDuration >= flushSilence || utteranceDuration >= MAX_UTTERANCE_MS
 
   if (!shouldFlush) return
   if (utteranceDuration < MIN_UTTERANCE_MS) { buf.chunks = []; return }
@@ -106,7 +107,7 @@ export function onPcmChunk(userId, stereoF32) {
   const chunks = buf.chunks
   buf.chunks = []
 
-  if (botSpeaking && _processingQueue.length > 0) {
+  if (botSpeaking) {
     _botSpeakingUntil = 0
     _interruptChunks = chunks; _interruptUserId = userId
     console.log(`[voice] userId=${userId} interrupted bot — queued for immediate follow-up`)
