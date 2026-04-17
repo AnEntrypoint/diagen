@@ -1,7 +1,7 @@
 import { transcribe } from './discord-whisper.js'
 import { resampleAudio } from './server-utils.mjs'
 import { synthesize } from './omnivoice-tts-bridge.js'
-import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-ollama.js'
+import { generate as generateLLM, generateTokens, isAvailable as isLLMAvailable } from './llm-ollama.js'
 import fs from 'fs'
 
 const SAMPLE_RATE_DISCORD = 48000
@@ -222,45 +222,82 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ Ollama unavailable`); return null }
 
-  const cached = _speculativeCache.get(userId)
-  let responseText
-  let genMs
+  const prompt = buildPromptWithHistory(userText, speaker, preambleText)
+  console.log(`[pipe] ${tag} ▶ stream-gen hist=${recentHistory.length}${preambleText ? ` preamble="${preambleText}"` : ''}`)
+  const refText = getVoiceReferenceText()
   const tGen = Date.now()
-  if (cached && cached.userText === userText && cached.resultPromise) {
-    console.log(`[pipe] ${tag} 🎯 speculative LLM hit`)
-    responseText = await cached.resultPromise
-    _speculativeCache.delete(userId)
-    genMs = Date.now() - tGen
-  } else {
-    const prompt = buildPromptWithHistory(userText, speaker, preambleText)
-    console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length}${preambleText ? ` preamble="${preambleText}"` : ''}`)
-    responseText = await generateLLM(prompt, characterSystemPrompt || undefined, signal)
-    genMs = Date.now() - tGen
+
+  let accum = ''
+  let responseText = ''
+  let ttsChain = Promise.resolve()
+  const allAudio = []
+  let firstTokenAt = null
+  let firstAudioAt = null
+  let stopRequested = false
+
+  const flushSentence = (sent) => {
+    const piece = sent.trim()
+    if (!piece) return
+    responseText += (responseText ? ' ' : '') + piece
+    ttsChain = ttsChain.then(async () => {
+      if (signal?.aborted || stopRequested) return
+      const tc = Date.now()
+      try {
+        const { audio, sampleRate: sr } = await synthesize(piece, refText ? voiceReferencePath : null, refText || null)
+        const resampled = resampleAudio(audio, sr || SAMPLE_RATE_TTS_FALLBACK, SAMPLE_RATE_DISCORD)
+        if (signal?.aborted || stopRequested) return
+        if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms`) }
+        console.log(`[pipe] ${tag} ✓ tts ${Date.now()-tc}ms "${piece.slice(0,40)}"`)
+        if (onChunk) onChunk(resampled)
+        allAudio.push(resampled)
+      } catch (err) {
+        console.error(`[pipe] ${tag} tts error:`, err.message)
+      }
+    })
   }
-  const nextTurn = responseText.search(/\n\s*[A-Za-z`][\w`.\-]{0,30}\s*:/)
-  if (nextTurn >= 0) responseText = responseText.slice(0, nextTurn)
+
+  const MAX_RESPONSE_CHARS = 280
+  try {
+    for await (const tok of generateTokens(prompt, characterSystemPrompt || undefined, signal)) {
+      if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
+      accum += tok
+      const turnIdx = accum.search(/\n\s*[_*`]?[A-Z][\w`.\-]{0,20}[_*`]?\s*:/)
+      if (turnIdx >= 0) { accum = accum.slice(0, turnIdx); stopRequested = true; break }
+      if (responseText.length + accum.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
+      let m
+      let pending = ''
+      while ((m = accum.match(/^([\s\S]*?[.!?])(\s+|$)/))) {
+        pending += m[1] + ' '
+        accum = accum.slice(m[0].length)
+        if (pending.length >= 20) { flushSentence(pending.trim()); pending = '' }
+        if (responseText.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
+      }
+      if (pending.trim()) accum = pending + accum
+      if (stopRequested) break
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') throw err
+  }
+  if (!stopRequested && accum.trim()) flushSentence(accum)
+  await ttsChain
+
   responseText = responseText.trim()
-  console.log(`[pipe] ${tag} ✓ generate ${genMs}ms → "${responseText}"`)
-  if (!responseText) return null
-  if (signal?.aborted) return null
+  const genMs = Date.now() - tGen
+  console.log(`[pipe] ${tag} ✓ stream-gen total ${genMs}ms → "${responseText}"`)
+  if (!responseText || signal?.aborted) return null
 
   recentHistory.push({ role: 'user', text: userText, username: speaker })
   recentHistory.push({ role: 'assistant', text: responseText })
   if (recentHistory.length > MAX_HISTORY * 2) recentHistory.splice(0, recentHistory.length - MAX_HISTORY * 2)
 
-  const refText = getVoiceReferenceText()
-  const tTts = Date.now()
-  const { audio: ttsAudio, sampleRate: ttsSampleRate } = await synthesize(responseText, refText ? voiceReferencePath : null, refText || null)
-  const ttsMs = Date.now() - tTts
-  if (!ttsAudio || ttsAudio.length === 0) throw new Error(`step=synthesize ${tag}: empty output`)
-  if (signal?.aborted) return null
-  const fromRate = ttsSampleRate || SAMPLE_RATE_TTS_FALLBACK
-  const resampled = resampleAudio(ttsAudio, fromRate, SAMPLE_RATE_DISCORD)
-  if (onChunk) onChunk(resampled)
+  const totalLen = allAudio.reduce((s, a) => s + a.length, 0)
+  const combined = new Float32Array(totalLen)
+  let off = 0
+  for (const a of allAudio) { combined.set(a, off); off += a.length }
   const totalMs = Date.now() - t0
-  console.log(`[pipe] ${tag} ✅ complete ${totalMs}ms (llm=${genMs} tts=${ttsMs}) → ${resampled.length} samples`)
-  resampled._text = responseText
-  return resampled
+  console.log(`[pipe] ${tag} ✅ complete ${totalMs}ms first-audio=${firstAudioAt ? firstAudioAt - t0 : '?'}ms chunks=${allAudio.length}`)
+  combined._text = responseText
+  return combined
 }
 
 const _speculativeCache = new Map()

@@ -33,6 +33,41 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
   }
 }
 
+export async function* generateTokens(prompt, system, signal) {
+  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      prompt: `${system}\n\n${prompt}`,
+      raw: true,
+      stream: true,
+      options: { temperature: 0.9, top_p: 0.92, num_predict: 300, repeat_penalty: 1.25, stop: ['\n\n'] },
+    }),
+    signal,
+  })
+  if (!res.ok) throw new Error(`Ollama error ${res.status}: ${await res.text()}`)
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line) continue
+      try {
+        const obj = JSON.parse(line)
+        if (obj.response) yield obj.response
+        if (obj.done) return
+      } catch {}
+    }
+  }
+}
+
 export async function generateStream(prompt, system = 'You are a helpful assistant. Be concise.') {
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
