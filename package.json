@@ -8,6 +8,8 @@
     "download-models": "node download-models.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:voice": "node test-voice.js",
+    "inspect": "node inspect-log.js",
     "postinstall": "node -e \"const fs=require('fs'),p='node_modules/@xenova/transformers/node_modules/sharp';fs.existsSync(p)&&fs.rmSync(p,{recursive:true,force:true})&&console.log('[postinstall] removed nested sharp')\""
   },
   "keywords": [],
