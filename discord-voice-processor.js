@@ -122,6 +122,63 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   return resampled
 }
 
+export async function processTranscript(rawText, confidence, userId, signal, username = null) {
+  const t0 = Date.now()
+  const speaker = username || `user${String(userId).slice(-4)}`
+  const tag = `uid=${userId} (${speaker})`
+  if (!voiceReferencePath) throw new Error(`step=voiceEmbed ${tag}: no voice ref`)
+
+  let userText = (rawText || '').trim().replace(/^>+\s*/, '').replace(/\s+/g, ' ').trim()
+  const phrases = userText.split(/[,.!?]\s+/).filter(Boolean)
+  if (phrases.length >= 5) {
+    const counts = new Map()
+    for (const p of phrases) counts.set(p, (counts.get(p) || 0) + 1)
+    const maxCount = Math.max(...counts.values())
+    if (maxCount >= 5) {
+      const mostCommon = [...counts.entries()].find(([, c]) => c === maxCount)[0]
+      console.log(`[processor] ⚠ whisper hallucination loop ("${mostCommon}" x${maxCount}) — collapsing`)
+      userText = mostCommon + '.'
+    }
+  }
+  console.log(`[pipe] ${tag} text="${userText}" conf=${(confidence||0).toFixed(2)}`)
+
+  if (signal?.aborted) return null
+  if (!userText || userText === '[no speech detected]' || userText.length < MIN_TRANSCRIPT_CHARS) {
+    console.log(`[pipe] ${tag} ✗ skip: trivial transcript`)
+    return null
+  }
+  if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ Ollama unavailable`); return null }
+
+  const prompt = buildPromptWithHistory(userText, speaker)
+  console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length}`)
+  const tGen = Date.now()
+  let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal))
+  const nextTurn = responseText.search(/\n\s*[A-Za-z`][\w`.\-]{0,30}\s*:/)
+  if (nextTurn >= 0) responseText = responseText.slice(0, nextTurn)
+  responseText = responseText.trim()
+  const genMs = Date.now() - tGen
+  console.log(`[pipe] ${tag} ✓ generate ${genMs}ms → "${responseText}"`)
+  if (!responseText) return null
+  if (signal?.aborted) return null
+
+  recentHistory.push({ role: 'user', text: userText, username: speaker })
+  recentHistory.push({ role: 'assistant', text: responseText })
+  if (recentHistory.length > MAX_HISTORY * 2) recentHistory.splice(0, recentHistory.length - MAX_HISTORY * 2)
+
+  const refText = getVoiceReferenceText()
+  const tTts = Date.now()
+  const { audio: ttsAudio, sampleRate: ttsSampleRate } = await synthesize(responseText, refText ? voiceReferencePath : null, refText || null)
+  const ttsMs = Date.now() - tTts
+  if (!ttsAudio || ttsAudio.length === 0) throw new Error(`step=synthesize ${tag}: empty output`)
+  if (signal?.aborted) return null
+
+  const fromRate = ttsSampleRate || SAMPLE_RATE_TTS_FALLBACK
+  const resampled = resampleAudio(ttsAudio, fromRate, SAMPLE_RATE_DISCORD)
+  const totalMs = Date.now() - t0
+  console.log(`[pipe] ${tag} ✅ complete ${totalMs}ms (llm=${genMs} tts=${ttsMs}) → ${resampled.length} samples`)
+  return resampled
+}
+
 export function clearHistory() { recentHistory.length = 0; console.log('[processor] history cleared') }
 
-export default { processUserAudio, setVoiceEmbedding, setCharacterCard, clearHistory }
+export default { processUserAudio, processTranscript, setVoiceEmbedding, setCharacterCard, clearHistory }

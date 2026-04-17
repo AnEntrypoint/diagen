@@ -1,5 +1,6 @@
-import { processUserAudio } from './discord-voice-processor.js'
+import { processUserAudio, processTranscript } from './discord-voice-processor.js'
 import { pushAudioFrame, flushAudio } from 'dispipe/voice'
+import { pushFrame, finalizeAndClear, clear as clearStream } from './whisper-stream.js'
 
 const SILENCE_THRESHOLD_BASE = 0.004
 const INTERRUPT_THRESHOLD = 0.025
@@ -46,28 +47,19 @@ function rms(samples) {
   return Math.sqrt(sum / samples.length)
 }
 
-async function handleUtterance(userId, chunks, peakRms) {
-  const totalLen = chunks.reduce((s, c) => s + c.length, 0)
-  const merged = new Float32Array(totalLen)
-  let offset = 0
-  for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.length }
-  const int16 = new Int16Array(merged.length)
-  for (let i = 0; i < merged.length; i++) {
-    const v = Math.max(-1, Math.min(1, merged[i]))
-    int16[i] = v < 0 ? v * 0x8000 : v * 0x7FFF
-  }
-  const pcmBuffer = Buffer.from(int16.buffer)
-  const durSec = (totalLen / SAMPLE_RATE).toFixed(2)
+async function handleUtterance(userId, utteranceDurMs, peakRms) {
   _activeUtteranceCount++
-  console.log(`[vad] ▶ utterance uid=${userId} dur=${durSec}s peak=${peakRms.toFixed(4)} samples=${totalLen} active=${_activeUtteranceCount}`)
+  console.log(`[vad] ▶ utterance uid=${userId} dur=${(utteranceDurMs/1000).toFixed(2)}s peak=${peakRms.toFixed(4)} active=${_activeUtteranceCount}`)
 
   const abort = new AbortController()
   _currentAbort = abort
-  const entry = { userId, startTime: Date.now(), samples: totalLen }
+  const entry = { userId, startTime: Date.now() }
   _processingQueue.push(entry)
   try {
+    const { text, confidence } = await finalizeAndClear(userId)
+    if (abort.signal.aborted) { console.log(`[vad] uid=${userId} aborted before generate`); return }
     const username = _usernameResolver(userId)
-    const monoOut = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId, abort.signal, username)
+    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username)
     if (!monoOut || abort.signal.aborted) {
       console.log(`[vad] uid=${userId} no output (aborted=${abort.signal.aborted})`)
       return
@@ -112,30 +104,20 @@ export function onPcmChunk(userId, stereoF32) {
   const isSpeech = level > effectiveThreshold
 
   if (!buf.capturing) {
-    buf.preroll.push(f32)
-    buf.prerollSamples += f32.length
-    while (buf.prerollSamples > PREROLL_SAMPLES && buf.preroll.length > 1) {
-      buf.prerollSamples -= buf.preroll[0].length
-      buf.preroll.shift()
-    }
     if (!isSpeech) return
     buf.capturing = true
-    buf.startTime = now - (buf.prerollSamples / SAMPLE_RATE) * 1000
+    buf.startTime = now
     buf.lastVoiceTime = now
     buf.peakRms = level
-    buf.chunks = [...buf.preroll]
-    buf.preroll = []
-    buf.prerollSamples = 0
-    console.log(`[vad] 🎤 speech-start uid=${userId} rms=${level.toFixed(4)} botSpeaking=${botSpeaking} preroll=${buf.chunks.reduce((s,c)=>s+c.length,0)}samples`)
+    console.log(`[vad] 🎤 speech-start uid=${userId} rms=${level.toFixed(4)} botSpeaking=${botSpeaking}`)
   } else {
-    buf.chunks.push(f32)
     if (isSpeech) {
       if (level > buf.peakRms) buf.peakRms = level
       buf.lastVoiceTime = now
     }
   }
 
-  if (!buf.capturing) return
+  pushFrame(userId, f32)
 
   const utteranceDuration = now - buf.startTime
   const silenceDuration = now - buf.lastVoiceTime
@@ -143,32 +125,29 @@ export function onPcmChunk(userId, stereoF32) {
   const shouldFlush = silenceDuration >= flushSilence || utteranceDuration >= MAX_UTTERANCE_MS
 
   if (!shouldFlush) return
-  const capturedSamples = buf.chunks.reduce((s, c) => s + c.length, 0)
-  if (utteranceDuration < MIN_UTTERANCE_MS || capturedSamples < MIN_SPEECH_SAMPLES || buf.peakRms < MIN_PEAK_RMS) {
-    console.log(`[vad] ✗ reject uid=${userId} dur=${utteranceDuration}ms samples=${capturedSamples} peak=${buf.peakRms.toFixed(4)}`)
-    buf.chunks = []
+  if (utteranceDuration < MIN_UTTERANCE_MS || buf.peakRms < MIN_PEAK_RMS) {
+    console.log(`[vad] ✗ reject uid=${userId} dur=${utteranceDuration}ms peak=${buf.peakRms.toFixed(4)}`)
+    clearStream(userId)
     buf.capturing = false
     buf.peakRms = 0
     return
   }
 
-  const chunks = buf.chunks
   const peak = buf.peakRms
-  buf.chunks = []
   buf.capturing = false
   buf.peakRms = 0
 
   if (botSpeaking) {
-    console.log(`[vad] ⚡ INTERRUPT uid=${userId} dur=${utteranceDuration}ms peak=${peak.toFixed(4)} — flushing bot audio, aborting pipeline`)
+    console.log(`[vad] ⚡ INTERRUPT uid=${userId} dur=${utteranceDuration}ms peak=${peak.toFixed(4)}`)
     _botSpeakingUntil = 0
     flushAudio()
     if (_currentAbort) { _currentAbort.abort(); _currentAbort = null }
     buf.processing = true
-    handleUtterance(userId, chunks, peak)
+    handleUtterance(userId, utteranceDuration, peak)
     return
   }
 
   console.log(`[vad] flush uid=${userId} dur=${utteranceDuration}ms silence=${silenceDuration}ms peak=${peak.toFixed(4)}`)
   buf.processing = true
-  handleUtterance(userId, chunks, peak)
+  handleUtterance(userId, utteranceDuration, peak)
 }
