@@ -264,12 +264,15 @@ export async function processTranscript(rawText, confidence, userId, signal, use
       const turnIdx = accum.search(/\n\s*[_*`]?[A-Z][\w`.\-]{0,20}[_*`]?\s*:/)
       if (turnIdx >= 0) { accum = accum.slice(0, turnIdx); stopRequested = true; break }
       if (responseText.length + accum.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
+      const isFirst = !firstAudioAt && allAudio.length === 0 && ttsChain === Promise.resolve ? true : (allAudio.length === 0 && !firstAudioAt)
+      const splitRe = isFirst ? /^([\s\S]*?[,;:.!?])(\s+|$)/ : /^([\s\S]*?[.!?])(\s+|$)/
+      const minLen = isFirst ? 12 : 20
       let m
       let pending = ''
-      while ((m = accum.match(/^([\s\S]*?[.!?])(\s+|$)/))) {
+      while ((m = accum.match(splitRe))) {
         pending += m[1] + ' '
         accum = accum.slice(m[0].length)
-        if (pending.length >= 20) { flushSentence(pending.trim()); pending = '' }
+        if (pending.length >= minLen) { flushSentence(pending.trim()); pending = '' }
         if (responseText.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
       }
       if (pending.trim()) accum = pending + accum
