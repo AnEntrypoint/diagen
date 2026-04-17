@@ -230,8 +230,14 @@ Diagen includes optional Discord bot support for text and voice interactions.
 
 ### Architecture
 
-- `discord-bot-client.js` — Low-level Discord voice connection (from jeeves project)
-- `discord-handler.js` — Integration layer with diagen server
+Discord voice uses **dispipe** npm package (low-level Discord gateway + UDP wrapper):
+- `dispipe/client`: joinDiscordVoice(), subscribeToSpeaker(), leaveVoice()
+- `dispipe/voice`: initVoicePlayer(), pushAudioFrame()
+
+Integration modules:
+- `discord-handler.js` — Initializes dispipe client, manages voice connections, coordinates with VAD
+- `discord-vad.js` — Voice Activity Detection: stereo downmix, RMS thresholding (0.01), silence flush (1.5s)
+- `discord-voice-processor.js` — Audio pipeline: transcribe → generate → synthesize → resample → pushAudioFrame
 - `server.js` — API endpoints for Discord control
   - `POST /api/discord/voice/connect` — join voice channel
   - `POST /api/discord/voice/disconnect` — leave voice channel
@@ -254,34 +260,15 @@ currentChannelState = { guildId: null, channelId: null }
 - `getCurrentChannelState()` — getter returning copy of stored channel state
 - `getDebugState()` — getter returning debug state object (see Observability below)
 
-### Audio Sending
+### Audio Output (dispipe)
 
-**Function**: `sendAudioToDiscord(pcmBuffer, sampleRate)` in `discord-bot-client.js`
+Audio output from discord-voice-processor.js is sent via `pushAudioFrame(f32)` from `dispipe/voice`.
 
-Sends PCM audio to active Discord voice connection with automatic encoding and playback.
+**Function**: `pushAudioFrame(Float32Array)` in dispipe/voice package
 
-**PCM Format Support**:
-- Input: Float32Array [-1.0, 1.0], Int16Array [-32768, 32767], or Buffer (interpreted as Int16 LE)
-- Sample Rate: any valid rate (automatically resampled to 48kHz)
-- Output: 48kHz, 16-bit PCM via discord.js voice subsystem
+Sends Float32Array mono audio to active Discord voice connection. dispipe handles internal Opus encoding and UDP transmission.
 
-**Encoding Strategy**:
-1. Normalize input PCM to 48kHz Float32Array via `normalizePcmTo48k()`
-2. Convert Float32 to Int16 with clamping
-3. Try Opus encoding if `prism.opus.Encoder` available
-4. Fall back to Raw PCM if Opus unavailable
-5. Queue audio to voice player via `voiceConnection.state.subscription.player.play()`
-
-**Error Handling**:
-- Throws if `voiceConnection` is null or not Ready
-- Throws if `voiceConnection.state.subscription` is unavailable
-- Propagates encoding/resampling errors with context
-
-**Metrics Tracking**:
-- `audioSendQueue`: circular buffer of last 100 audio sends (timestamp, byte count)
-- `totalAudioFramesSent`: cumulative sample count
-- `lastSendTimestamp`: Unix timestamp of most recent send
-- `lastSendError`: last error with timestamp
+**Call site**: discord-vad.js handleUtterance(), line 51
 
 ### Observability
 
@@ -322,8 +309,8 @@ Query via curl or monitoring tools: `curl http://localhost:8080/debug/discord`
 
 **Pipeline Flow**:
 ```
-48kHz PCM Input → Transcribe → Generate → Synthesize → Resample → 48kHz PCM Output
-     (16-bit)       (STT)      (text)      (24kHz)      (24→48k)    (Uint8Array)
+48kHz PCM Input → Transcribe → Generate → Synthesize → Resample → 48kHz Float32 Output
+     (16-bit)       (STT)      (text)      (24kHz)      (24→48k)   (dispipe expects)
 ```
 
 **API**:
@@ -331,11 +318,11 @@ Query via curl or monitoring tools: `curl http://localhost:8080/debug/discord`
 import { processUserAudio, setVoiceEmbedding } from './discord-voice-processor.js';
 
 // Initialize with voice embedding (call once after loading voice)
-setVoiceEmbedding(voiceEmbedding);
+setVoiceEmbedding(voiceReferencePath);
 
 // Process user audio through complete pipeline
 const pcmOutput = await processUserAudio(pcmBuffer, 48000, userId);
-// Returns: Uint8Array of 48kHz 16-bit PCM ready for Discord transmission
+// Returns: Float32Array of 48kHz mono audio, ready for pushAudioFrame(pcmOutput)
 ```
 
 **Step Details**:
@@ -357,10 +344,9 @@ const pcmOutput = await processUserAudio(pcmBuffer, 48000, userId);
 4. **Resample** (`server-utils.mjs`): Linear interpolation resampling from 24kHz to 48kHz
    - Ensures Discord voice channel compatibility
    - Preserves audio fidelity through smooth interpolation
+   - Returns Float32Array at 48kHz
 
-5. **Convert to PCM**: Float32 [-1, 1] to Int16 [-32768, 32767] with clamping
-   - Packs int16 samples into Uint8Array (little-endian)
-   - Ready for Discord voice transmission
+Output ready for pushAudioFrame(): Float32Array mono 48kHz. No further conversion needed.
 
 **Error Handling**:
 - All errors include context: step name, userId, input size/format
@@ -380,7 +366,42 @@ const pcmOutput = await processUserAudio(pcmBuffer, 48000, userId);
 
 ### Dependencies
 
-Added: `discord.js`, `@discordjs/voice`, `prism-media`, `@xenova/transformers`
+Added: `discord.js`, `@discordjs/voice`, `prism-media`, `@xenova/transformers`, `dispipe`
+
+### dispipe Audio Format — Critical Pitfalls
+
+**subscribeToSpeaker emits stereo-interleaved Float32 at 48kHz:**
+- Format: [L, R, L, R, ...] Float32Array, NOT mono
+- Must downmix before Whisper STT: `mono[i] = (stereo[i*2] + stereo[i*2+1]) / 2`
+- Implementation: discord-vad.js onPcmChunk() handler, lines 66-67
+
+Why: Discord voice mix is stereo. Whisper requires mono 16kHz.
+
+**pushAudioFrame expects Float32Array mono at 48kHz:**
+- Input: Float32Array [-1.0 to 1.0], 48kHz, mono (not Int16, not Uint8Array)
+- Called in discord-vad.js after pipeline completion
+- Internal: dispipe/voice handles Opus encoding + UDP send to Discord
+
+Why: dispipe/voice standardizes on float input for flexibility. Do not convert to Int16.
+
+**VAD (Voice Activity Detection) constants** (discord-vad.js):
+- `SILENCE_THRESHOLD = 0.01` — RMS level threshold for speech/silence boundary
+- `SILENCE_DURATION_MS = 1500` — Flush buffer after 1.5s of silence
+- `MIN_UTTERANCE_MS = 500` — Reject utterances shorter than 500ms
+- `MAX_UTTERANCE_MS = 30000` — Safety limit: max 30s per utterance
+
+Why: Prevents sending empty audio and excessive fragmentation. Constants tuned empirically for natural speech.
+
+**Event pattern for speaker subscription**:
+```javascript
+voiceReceiver.speaking.on('start', (userId) => {
+  subscribeToSpeaker(userId, onPcmChunk)  // emit handler called with (userId, stereoFloat32)
+})
+```
+
+### Reference Implementation
+
+**webrig companion** (C:/dev/webrig/companion/index.js) uses identical dispipe pattern for Discord voice. Reference for dispipe API usage, stereo downmix logic, and VAD tuning.
 
 ## Testing — Discord Voice Pipeline
 
