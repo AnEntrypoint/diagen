@@ -16,7 +16,7 @@ export function setCharacterCard(card) {
   const d = card.spec === 'chara_card_v2' ? card.data : card
   const parts = [d.description, d.personality && `Personality: ${d.personality}`, d.scenario && `Scenario: ${d.scenario}`].filter(Boolean)
   const name = d.name || 'the character'
-  characterSystemPrompt = `You are ${name}. Stay in character at all times. Respond only as ${name} would speak — never describe yourself, never recite your backstory unprompted, just talk naturally in character. Keep replies short, one or two sentences.\n\n${parts.join('\n\n')}`
+  characterSystemPrompt = `You are ${name}. Speak naturally as this person in casual conversation. Rules: never mention your backstory or traits unless directly asked; never repeat a catchphrase more than once per conversation; respond to what was actually said; one or two short sentences max.\n\n${parts.join('\n\n')}`
   console.log(`[processor] character card set: ${name} (${characterSystemPrompt.length} chars)`)
 }
 
