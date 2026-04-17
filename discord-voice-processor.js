@@ -106,10 +106,11 @@ function getVoiceReferenceText() {
   return voiceReferenceText
 }
 
-function buildPromptWithHistory(userText, username) {
+function buildPromptWithHistory(userText, username, preambleText = null) {
   const hist = recentHistory.slice(-MAX_HISTORY * 2)
   const ctx = hist.map(h => `${h.role === 'user' ? (h.username || 'Customer') : characterName}: ${h.text}`).join('\n')
-  return `${ctx ? ctx + '\n' : ''}${username}: ${userText}\n${characterName}:`
+  const tail = preambleText ? `${characterName}: ${preambleText} ` : `${characterName}:`
+  return `${ctx ? ctx + '\n' : ''}${username}: ${userText}\n${tail}`
 }
 
 export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, username = null) {
@@ -194,7 +195,7 @@ function splitSentences(text) {
   return out.filter(Boolean)
 }
 
-export async function processTranscript(rawText, confidence, userId, signal, username = null, onChunk = null) {
+export async function processTranscript(rawText, confidence, userId, signal, username = null, onChunk = null, preambleText = null) {
   const t0 = Date.now()
   const speaker = username || `user${String(userId).slice(-4)}`
   const tag = `uid=${userId} (${speaker})`
@@ -231,8 +232,8 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     _speculativeCache.delete(userId)
     genMs = Date.now() - tGen
   } else {
-    const prompt = buildPromptWithHistory(userText, speaker)
-    console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length}`)
+    const prompt = buildPromptWithHistory(userText, speaker, preambleText)
+    console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length}${preambleText ? ` preamble="${preambleText}"` : ''}`)
     responseText = await generateLLM(prompt, characterSystemPrompt || undefined, signal)
     genMs = Date.now() - tGen
   }

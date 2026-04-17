@@ -63,21 +63,26 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
   const entry = { userId, startTime: Date.now() }
   _processingQueue.push(entry)
 
-  if (preambleReady() && Math.random() < 0.6) {
-    const pre = pickPreamble('thinking')
-    if (pre) {
-      const stereo = new Float32Array(pre.audio.length * 2)
-      for (let i = 0; i < pre.audio.length; i++) { stereo[i * 2] = pre.audio[i]; stereo[i * 2 + 1] = pre.audio[i] }
-      const durMs = (pre.audio.length / SAMPLE_RATE) * 1000
-      _botSpeakingUntil = Date.now() + durMs + BOT_SPEAK_TAIL_MS
-      pushAudioFrame(stereo)
-      console.log(`[vad] ⚡ preamble "${pre.text}" (${durMs.toFixed(0)}ms) — hiding LLM latency`)
-    }
-  }
+  let preambleUsed = null
   try {
     const { text, confidence } = await finalizeAndClear(userId)
     if (abort.signal.aborted) { console.log(`[vad] uid=${userId} aborted before generate`); return }
     const username = _usernameResolver(userId)
+
+    const cleanText = (text || '').trim()
+    const isUsable = cleanText && cleanText !== '[no speech detected]' && cleanText.length >= 2
+    if (isUsable && preambleReady() && Math.random() < 0.6) {
+      const pre = pickPreamble('thinking')
+      if (pre) {
+        const stereo = new Float32Array(pre.audio.length * 2)
+        for (let i = 0; i < pre.audio.length; i++) { stereo[i * 2] = pre.audio[i]; stereo[i * 2 + 1] = pre.audio[i] }
+        const durMs = (pre.audio.length / SAMPLE_RATE) * 1000
+        _botSpeakingUntil = Date.now() + durMs + BOT_SPEAK_TAIL_MS
+        pushAudioFrame(stereo)
+        preambleUsed = pre.text
+        console.log(`[vad] ⚡ preamble "${pre.text}" (${durMs.toFixed(0)}ms) — hiding LLM latency`)
+      }
+    }
     let firstChunkAt = null
     const onChunk = (monoChunk) => {
       if (abort.signal.aborted) return
@@ -89,7 +94,7 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
       pushAudioFrame(stereo)
       if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms dur=${durMs.toFixed(0)}ms`) }
     }
-    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk)
+    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk, preambleUsed)
     if (!monoOut || abort.signal.aborted) {
       console.log(`[vad] uid=${userId} no output (aborted=${abort.signal.aborted})`)
       return
