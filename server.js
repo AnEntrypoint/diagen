@@ -197,6 +197,22 @@ app.post('/api/chat', async (req, res) => {
   }
 })
 
+let _setCharacterCard = null
+app.post('/api/character/card', (req, res) => {
+  try {
+    const card = req.body
+    if (!card || typeof card !== 'object') return res.status(400).json({ error: 'card JSON required' })
+    if (_setCharacterCard) {
+      _setCharacterCard(card)
+      res.json({ success: true })
+    } else {
+      res.status(503).json({ error: 'Discord processor not loaded' })
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // Discord API endpoints
 app.post('/api/discord/voice/connect', async (req, res) => {
   if (!connectToVoiceChannel) return res.status(503).json({ error: 'Discord not enabled' })
@@ -318,6 +334,9 @@ async function start() {
       getDebugState = discordHandler.getDebugState
       getDiscordClient = discordHandler.getDiscordClient
       setVoiceEmbedding = discordProcessor.setVoiceEmbedding
+      const setCharacterCard = discordProcessor.setCharacterCard
+      _setCharacterCard = setCharacterCard
+      const getCharacterSystemPrompt = discordProcessor.getCharacterSystemPrompt
 
       setVoiceEmbedding(CLEETUS_WAV)
       console.log('[server] Voice reference path set for Discord processor')
@@ -326,7 +345,7 @@ async function start() {
       const onCommand = async (userId, prompt) => {
         const available = await isLLMAvailable()
         if (!available) return `[LLM offline] Received: ${prompt}`
-        return generateLLM(prompt)
+        return generateLLM(prompt, getCharacterSystemPrompt() || undefined)
       }
       const onUserAudio = (userId, pcmChunk) => {}
       const autoGuild = process.env.GUILD_ID

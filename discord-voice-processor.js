@@ -10,6 +10,16 @@ const MIN_TRANSCRIPT_CHARS = 3
 
 let voiceReferencePath = null
 let voiceReferenceText = null
+let characterSystemPrompt = null
+
+export function setCharacterCard(card) {
+  const d = card.spec === 'chara_card_v2' ? card.data : card
+  const parts = [d.name && `Name: ${d.name}`, d.description, d.personality && `Personality: ${d.personality}`, d.scenario && `Scenario: ${d.scenario}`].filter(Boolean)
+  characterSystemPrompt = parts.join('\n\n') || null
+  console.log(`[processor] character card set: ${d.name || '(unnamed)'} (${characterSystemPrompt?.length || 0} chars)`)
+}
+
+export function getCharacterSystemPrompt() { return characterSystemPrompt }
 
 export function setVoiceEmbedding(refAudioPath) {
   voiceReferencePath = refAudioPath
@@ -50,7 +60,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
   }
 
   console.log(`[processor] userId=${userId} step=generate start`)
-  const responseText = (await generateLLM(userText)).trim()
+  const responseText = (await generateLLM(userText, characterSystemPrompt || undefined)).trim()
   console.log(`[processor] userId=${userId} step=generate done: "${responseText.slice(0, 80)}"`)
   if (!responseText) return null
 

@@ -12,6 +12,8 @@ let _processingQueue = null
 let _lastError = null
 let _botSpeakingUntil = 0
 const BOT_SPEAK_TAIL_MS = 800
+let _interruptChunks = null
+let _interruptUserId = null
 
 export function init(processingQueue, lastErrorRef) {
   _processingQueue = processingQueue
@@ -64,11 +66,17 @@ async function handleUtterance(userId, chunks) {
   } finally {
     const idx = _processingQueue.indexOf(entry)
     if (idx !== -1) _processingQueue.splice(idx, 1)
+    if (_interruptChunks && _interruptUserId) {
+      const ic = _interruptChunks; const iu = _interruptUserId
+      _interruptChunks = null; _interruptUserId = null
+      console.log(`[voice] processing interrupt utterance from ${iu}`)
+      handleUtterance(iu, ic).finally(() => { const b = userBuffers.get(iu); if (b) b.processing = false })
+    }
   }
 }
 
 export function onPcmChunk(userId, stereoF32) {
-  if (Date.now() < _botSpeakingUntil) return
+  const botSpeaking = Date.now() < _botSpeakingUntil
   const monoLen = stereoF32.length / 2
   const f32 = new Float32Array(monoLen)
   for (let i = 0; i < monoLen; i++) f32[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
@@ -97,6 +105,14 @@ export function onPcmChunk(userId, stereoF32) {
 
   const chunks = buf.chunks
   buf.chunks = []
+
+  if (botSpeaking && _processingQueue.length > 0) {
+    _botSpeakingUntil = 0
+    _interruptChunks = chunks; _interruptUserId = userId
+    console.log(`[voice] userId=${userId} interrupted bot — queued for immediate follow-up`)
+    return
+  }
+
   buf.processing = true
   handleUtterance(userId, chunks).finally(() => { buf.processing = false })
 }
