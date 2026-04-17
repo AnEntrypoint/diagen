@@ -53,3 +53,11 @@ Items Completed: 8/8
 - web-demo-tts-unchanged
 - omnivoice-windows-docs
 - replace-webtalk-with-omnivoice (parent task)
+
+## [2026-04-17] Discord voice fixes
+
+- fix-mono-stereo-upmix: upmix mono Float32 to stereo before pushAudioFrame (dispipe encoder is 2ch)
+- fix-tts-sample-rate: synthesize() returns { audio, sampleRate }, processor uses actual rate for resample
+- fix-omnivoice-line-limit: extract Python TTS server to omnivoice_tts_server.py, bridge now 100L
+- fix-whisper-comments: removed all comments from discord-whisper.js
+- delete discord-voice-player.js: orphaned, dispipe/voice is authoritative

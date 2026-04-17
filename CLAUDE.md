@@ -377,12 +377,13 @@ Added: `discord.js`, `@discordjs/voice`, `prism-media`, `@xenova/transformers`, 
 
 Why: Discord voice mix is stereo. Whisper requires mono 16kHz.
 
-**pushAudioFrame expects Float32Array mono at 48kHz:**
-- Input: Float32Array [-1.0 to 1.0], 48kHz, mono (not Int16, not Uint8Array)
-- Called in discord-vad.js after pipeline completion
-- Internal: dispipe/voice handles Opus encoding + UDP send to Discord
+**pushAudioFrame expects stereo-interleaved Float32Array at 48kHz:**
+- Input: Float32Array [-1.0 to 1.0], 48kHz, stereo [L,R,L,R,...] — NOT mono
+- processUserAudio returns mono — upmix before calling: `const s=new Float32Array(mono.length*2); for(let i=0;i<mono.length;i++){s[i*2]=mono[i];s[i*2+1]=mono[i]}`
+- Called in discord-vad.js handleUtterance() after processUserAudio
+- dispipe encoder: channels=2, FRAME=960*2*2 bytes
 
-Why: dispipe/voice standardizes on float input for flexibility. Do not convert to Int16.
+Why: Opus encoder in dispipe/voice is stereo. Mono input → half-speed/wrong-pitch audio.
 
 **VAD (Voice Activity Detection) constants** (discord-vad.js):
 - `SILENCE_THRESHOLD = 0.01` — RMS level threshold for speech/silence boundary

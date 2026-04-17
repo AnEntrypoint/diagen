@@ -25,10 +25,10 @@ function getOrCreateBuffer(userId) {
   return userBuffers.get(userId)
 }
 
-function rms(mono) {
+function rms(samples) {
   let sum = 0
-  for (let i = 0; i < mono.length; i++) sum += mono[i] * mono[i]
-  return Math.sqrt(sum / mono.length)
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
+  return Math.sqrt(sum / samples.length)
 }
 
 async function handleUtterance(userId, chunks) {
@@ -47,9 +47,11 @@ async function handleUtterance(userId, chunks) {
   const entry = { userId, startTime: Date.now(), samples: totalLen }
   _processingQueue.push(entry)
   try {
-    const f32Out = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
-    pushAudioFrame(f32Out)
-    console.log(`[voice] userId=${userId} response sent: ${f32Out.length} samples`)
+    const monoOut = await processUserAudio(pcmBuffer, SAMPLE_RATE, userId)
+    const stereo = new Float32Array(monoOut.length * 2)
+    for (let i = 0; i < monoOut.length; i++) { stereo[i * 2] = monoOut[i]; stereo[i * 2 + 1] = monoOut[i] }
+    pushAudioFrame(stereo)
+    console.log(`[voice] userId=${userId} response sent: ${monoOut.length} mono samples -> ${stereo.length} stereo`)
   } catch (err) {
     console.error(`[voice] userId=${userId} pipeline error: ${err.message}`)
     _lastError.value = { message: err.message, timestamp: Date.now(), userId }

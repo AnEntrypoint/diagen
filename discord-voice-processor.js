@@ -4,7 +4,7 @@ import { synthesize } from './omnivoice-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-ollama.js'
 
 const SAMPLE_RATE_DISCORD = 48000
-const SAMPLE_RATE_TTS = 24000
+const SAMPLE_RATE_TTS_FALLBACK = 24000
 
 let voiceReferencePath = null
 
@@ -30,13 +30,14 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId) {
 
     const responseText = await generateResponse(transcription.text, userId)
 
-    const ttsOutput = await synthesize(responseText, voiceReferencePath, 'reference speech')
-    if (!ttsOutput || ttsOutput.length === 0) throw new Error(`step=synthesize userId=${userId}: empty synthesis output`)
+    const { audio: ttsAudio, sampleRate: ttsSampleRate } = await synthesize(responseText, voiceReferencePath, 'reference speech')
+    if (!ttsAudio || ttsAudio.length === 0) throw new Error(`step=synthesize userId=${userId}: empty synthesis output`)
 
-    const resampled = resampleAudio(ttsOutput, SAMPLE_RATE_TTS, SAMPLE_RATE_DISCORD)
+    const fromRate = ttsSampleRate || SAMPLE_RATE_TTS_FALLBACK
+    const resampled = resampleAudio(ttsAudio, fromRate, SAMPLE_RATE_DISCORD)
     if (!resampled || resampled.length === 0) throw new Error(`step=resample userId=${userId}: empty resampled output`)
 
-    console.log(`[processor] userId=${userId} pipeline complete: "${responseText.slice(0, 50)}..." -> ${resampled.length} samples`)
+    console.log(`[processor] userId=${userId} pipeline complete: "${responseText.slice(0, 50)}..." -> ${resampled.length} samples @ ${fromRate}->${SAMPLE_RATE_DISCORD}Hz`)
     return resampled
   } catch (err) {
     throw err.message.includes('step=') ? err : new Error(`step=pipeline userId=${userId}: ${err.message}`)
