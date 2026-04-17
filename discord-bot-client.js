@@ -4,7 +4,6 @@ import prism from 'prism-media'
 
 let voiceConnection = null
 let voiceReceiver = null
-let _client = null
 export const lastVoiceCloseCode = { value: null, reason: null }
 
 function createClient() {
@@ -33,7 +32,7 @@ async function _tryJoin(channel, guild) {
   })
 
   conn.addStatePacket = (packet) => {
-    console.log(`[discord] VOICE_STATE_UPDATE session_id=${packet.session_id} channel_id=${packet.channel_id}`)
+    console.log(`[discord] VOICE_STATE session_id=${packet.session_id} channel_id=${packet.channel_id}`)
     conn.packets.state = packet
     if (packet.self_deaf !== undefined) conn.joinConfig.selfDeaf = packet.self_deaf
     if (packet.self_mute !== undefined) conn.joinConfig.selfMute = packet.self_mute
@@ -44,11 +43,8 @@ async function _tryJoin(channel, guild) {
   conn.addServerPacket = (packet) => {
     conn.packets.server = packet
     if (packet.endpoint) {
-      console.log(`[discord] VOICE_SERVER_UPDATE endpoint=${packet.endpoint}, waiting 600ms for fresh VOICE_STATE_UPDATE...`)
-      setTimeout(() => {
-        console.log(`[discord] configureNetworking session_id=${conn.packets.state?.session_id}`)
-        conn.configureNetworking()
-      }, 600)
+      console.log(`[discord] VOICE_SERVER endpoint=${packet.endpoint} session=${conn.packets.state?.session_id}`)
+      conn.configureNetworking()
     } else {
       origAddServerPacket(packet)
     }
@@ -79,29 +75,7 @@ async function _tryJoin(channel, guild) {
   }
 }
 
-async function _leaveAndWaitChannelNull(guildId, waitMs = 6000) {
-  _destroyExisting(guildId)
-  const client = _client
-  const botId = client?.user?.id
-  try { await client.rest.patch(`/guilds/${guildId}/members/@me`, { body: { channel_id: null } }) } catch(e) {}
-  try { for (const shard of client.ws.shards.values()) shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } }) } catch(e) {}
-  await new Promise(r => {
-    const onVoiceState = (oldState, newState) => {
-      const memberId = newState.member?.user?.id ?? newState.member?.id
-      if (newState.guild?.id === guildId && newState.channelId === null && (!botId || memberId === botId)) {
-        client.off('voiceStateUpdate', onVoiceState); clearTimeout(timer)
-        console.log('[discord] leave confirmed, fresh session_id will come on rejoin')
-        r()
-      }
-    }
-    const timer = setTimeout(() => { client.off('voiceStateUpdate', onVoiceState); console.log('[discord] leave wait timeout'); r() }, waitMs)
-    client.on('voiceStateUpdate', onVoiceState)
-  })
-  await new Promise(r => setTimeout(r, 500))
-}
-
 async function joinDiscordVoice(client, guildId, channelId) {
-  _client = client
   let guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
   if (!guild) throw new Error(`Guild ${guildId} not found`)
 
@@ -113,10 +87,12 @@ async function joinDiscordVoice(client, guildId, channelId) {
   const perms = channel.permissionsFor(me)
   if (perms && !perms.has('Connect')) throw new Error(`Bot lacks CONNECT permission in channel ${channelId}`)
 
-  await _leaveAndWaitChannelNull(guildId)
+  _destroyExisting(guildId)
+  try { for (const shard of client.ws.shards.values()) shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } }) } catch(e) {}
+  await new Promise(r => setTimeout(r, 2000))
 
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    console.log(`[discord] join attempt ${attempt}: guild=${guild.id} channel=${channel.id}`)
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    console.log(`[discord] join attempt ${attempt}: guild=${guildId} channel=${channelId}`)
     try {
       voiceConnection = await _tryJoin(channel, guild)
       voiceReceiver = voiceConnection.receiver
@@ -125,12 +101,11 @@ async function joinDiscordVoice(client, guildId, channelId) {
       return { voiceConnection, voiceReceiver }
     } catch (err) {
       console.log(`[discord] attempt ${attempt} failed: ${err.message} closeCode=${err.closeCode}`)
-      if (attempt === 5) throw new Error(`Voice join failed after 5 attempts: ${err.message}`)
-      console.log(`[discord] leaving and waiting for fresh session_id...`)
-      await _leaveAndWaitChannelNull(guildId)
-      guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId)
-      channel = guild.channels.cache.get(channelId)
-      if (!channel) { await guild.channels.fetch(); channel = guild.channels.cache.get(channelId) }
+      if (attempt === 8) throw new Error(`Voice join failed after 8 attempts: ${err.message}`)
+      _destroyExisting(guildId)
+      const delay = err.closeCode === 4017 ? 10000 : 4000
+      console.log(`[discord] waiting ${delay}ms before retry...`)
+      await new Promise(r => setTimeout(r, delay))
     }
   }
 }
