@@ -1,5 +1,5 @@
 import { processUserAudio } from './discord-voice-processor.js'
-import { pushAudioFrame } from 'dispipe/voice'
+import { pushAudioFrame, flushAudio } from 'dispipe/voice'
 
 const SILENCE_THRESHOLD = 0.0005
 const SILENCE_DURATION_MS = 1500
@@ -108,8 +108,9 @@ export function onPcmChunk(userId, stereoF32) {
   buf.chunks = []
 
   if (botSpeaking) {
-    console.log(`[voice] userId=${userId} interrupt — aborting current pipeline`)
+    console.log(`[voice] userId=${userId} interrupt — flushing audio, aborting pipeline`)
     _botSpeakingUntil = 0
+    flushAudio()
     if (_currentAbort) { _currentAbort.abort(); _currentAbort = null }
     buf.processing = true
     handleUtterance(userId, chunks)
