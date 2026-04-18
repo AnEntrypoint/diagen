@@ -1,11 +1,11 @@
 # diagen
 
-Real-time AI voice bot for Discord. Listens to users in voice channels, transcribes speech (Whisper), generates responses (Ollama LLM), synthesizes speech (OmniVoice), and plays back in the channel.
+Real-time AI voice bot for Discord. Listens to users in voice channels, transcribes speech (Whisper), generates responses (llama.cpp LLM), synthesizes speech (OmniVoice), and plays back in the channel.
 
 ## Architecture
 
 ```
-Discord voice → dispipe/client → discord-vad.js → Whisper STT → Ollama LLM → OmniVoice TTS → dispipe/voice → Discord
+Discord voice → dispipe/client → discord-vad.js → Whisper STT → llama.cpp LLM → OmniVoice TTS → dispipe/voice → Discord
 ```
 
 **Modules:**
@@ -15,14 +15,14 @@ Discord voice → dispipe/client → discord-vad.js → Whisper STT → Ollama L
 - `discord-whisper.js` — Whisper STT via @xenova/transformers
 - `omnivoice-tts-bridge.js` — OmniVoice Python subprocess bridge
 - `omnivoice_tts_server.py` — Python TTS server (spawned via uv run)
-- `llm-ollama.js` — Ollama LLM integration
+- `llm-llamacpp.js` — llama.cpp LLM integration via node-llama-cpp (in-process GGUF)
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env
-# Edit .env: DISCORD_TOKEN, GUILD_ID, CHANNEL_ID, OLLAMA_HOST
+# Edit .env: DISCORD_TOKEN, GUILD_ID, CHANNEL_ID, LLAMA_MODEL_PATH
 node server.js
 ```
 
@@ -35,6 +35,9 @@ node server.js
 | `CHANNEL_ID` | Voice channel ID to auto-join |
 | `PORT` | HTTP server port (default 8080) |
 | `WARMUP_TTS` | Set to `false` to skip TTS warmup |
+| `LLAMA_MODEL_PATH` | Path to GGUF model file (default: ollama blob for llama3.2:1b) |
+| `LLAMA_CONTEXT_SIZE` | Context size tokens (default 2048) |
+| `LLAMA_GPU_LAYERS` | Number of layers to offload to GPU (default: auto) |
 
 ## HTTP API
 

@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { transcribe } from './discord-whisper.js'
-import { generate as generateLLM, isAvailable } from './llm-ollama.js'
+import { generate as generateLLM, isAvailable } from './llm-llamacpp.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const VOICE_REF = path.join(__dirname, 'voices', 'cleetus.wav')
@@ -10,12 +10,12 @@ const VOICE_REF = path.join(__dirname, 'voices', 'cleetus.wav')
 async function testSTTandLLM() {
   console.log('[test] Testing STT and LLM components separately...\n')
 
-  // Test 1: Check if Ollama is available
-  console.log('[test] 1. Checking Ollama availability...')
+  // Test 1: Check if LLM is available
+  console.log('[test] 1. Checking LLM availability...')
   const available = await isAvailable()
-  console.log(`[test]    Ollama: ${available ? '✓ Ready' : '✗ Not ready'}`)
+  console.log(`[test]    LLM: ${available ? '✓ Ready' : '✗ Not ready'}`)
   if (!available) {
-    console.log('[test]    Waiting 3 seconds for Ollama to start...')
+    console.log('[test]    Waiting 3 seconds for LLM to start...')
     await new Promise(r => setTimeout(r, 3000))
   }
 

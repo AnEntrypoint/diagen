@@ -3,7 +3,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { synthesize } from './omnivoice-tts-bridge.js'
 import { transcribe } from './discord-whisper.js'
-import { generate as generateLLM } from './llm-ollama.js'
+import { generate as generateLLM } from './llm-llamacpp.js'
 import { resampleAudio } from './server-utils.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

@@ -7,7 +7,7 @@ import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
 import { synthesize as synthesizeOmniVoice } from './omnivoice-tts-bridge.js'
-import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-ollama.js'
+import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import os from 'os'
 
 // Load environment variables from .env
@@ -188,7 +188,7 @@ app.post('/api/chat', async (req, res) => {
     const { prompt, system } = req.body
     if (!prompt) return res.status(400).json({ error: 'prompt required' })
     const available = await isLLMAvailable()
-    if (!available) return res.status(503).json({ error: 'LLM not available (Ollama not running or model not pulled)' })
+    if (!available) return res.status(503).json({ error: 'LLM not available (llama.cpp model failed to load)' })
     const response = await generateLLM(prompt, system)
     res.json({ response })
   } catch (err) {

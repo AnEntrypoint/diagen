@@ -1,7 +1,7 @@
 import { transcribe } from './discord-whisper.js'
 import { resampleAudio } from './server-utils.mjs'
 import { synthesize } from './omnivoice-tts-bridge.js'
-import { generate as generateLLM, generateTokens, isAvailable as isLLMAvailable } from './llm-ollama.js'
+import { generate as generateLLM, generateTokens, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import fs from 'fs'
 
 const SAMPLE_RATE_DISCORD = 48000
@@ -146,7 +146,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
     return null
   }
 
-  if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ Ollama unavailable`); return null }
+  if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
   const prompt = buildPromptWithHistory(userText, speaker)
   console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length} prompt=${prompt.length}ch`)
@@ -220,7 +220,7 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     console.log(`[pipe] ${tag} ✗ skip: trivial transcript`)
     return null
   }
-  if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ Ollama unavailable`); return null }
+  if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
   const prompt = buildPromptWithHistory(userText, speaker, preambleText)
   console.log(`[pipe] ${tag} ▶ stream-gen hist=${recentHistory.length}${preambleText ? ` preamble="${preambleText}"` : ''}`)

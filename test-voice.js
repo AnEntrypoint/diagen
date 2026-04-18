@@ -16,7 +16,7 @@ const proc = spawn('node', ['server.js'], {
 })
 
 const stream = fs.createWriteStream(LOG, { flags: 'a' })
-const filter = /\[(vad|pipe|stream|processor|ollama|preamble|discord)\]|error|Error|listening/i
+const filter = /\[(vad|pipe|stream|processor|llamacpp|preamble|discord)\]|error|Error|listening/i
 
 const pipe = (src, tag) => {
   let buf = ''
