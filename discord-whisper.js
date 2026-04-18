@@ -1,4 +1,11 @@
-import { pipeline } from '@xenova/transformers/src/transformers.js'
+import { pipeline, env } from '@xenova/transformers/src/transformers.js'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+env.cacheDir = path.join(__dirname, 'models', 'whisper')
+env.localModelPath = path.join(__dirname, 'models', 'whisper')
+env.allowRemoteModels = true
 
 let whisperPipeline = null
 let pipelineInitPromise = null

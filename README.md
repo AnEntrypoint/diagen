@@ -21,10 +21,23 @@ Discord voice → dispipe/client → discord-vad.js → Whisper STT → llama.cp
 
 ```bash
 npm install
+npm run download-models   # populates models/{audio2afan,tts,llm}/
 cp .env.example .env
-# Edit .env: DISCORD_TOKEN, GUILD_ID, CHANNEL_ID, LLAMA_MODEL_PATH
+# Edit .env: DISCORD_TOKEN, GUILD_ID, CHANNEL_ID
 node server.js
 ```
+
+## Models
+
+All models are localized under `models/` (gitignored). Auto-populated by `npm run download-models` or on first use:
+
+| Dir | Source | Notes |
+|---|---|---|
+| `models/llm/*.gguf` | copied from `~/.ollama/models/blobs/` | Override with `LLAMA_MODEL_PATH` |
+| `models/whisper/` | HuggingFace `Xenova/whisper-base` | Auto-download on first STT call |
+| `models/omnivoice/` | HuggingFace (via `HF_HOME`) | Auto-download on first TTS call |
+| `models/audio2afan/` | IPFS (see `download-models.js`) | Blendshape model |
+| `models/tts/` | IPFS (see `download-models.js`) | Mimi/flow ONNX weights |
 
 ## Environment
 

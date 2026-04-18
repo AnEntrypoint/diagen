@@ -1,10 +1,34 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { pipeline } from 'stream/promises'
 import { createWriteStream } from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const LLM_SOURCES = [
+  {
+    name: 'llama3.2-1b.gguf',
+    ollamaBlob: path.join(os.homedir(), '.ollama/models/blobs/sha256-74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45'),
+  },
+]
+
+async function stageLlmModels() {
+  const dir = path.join(__dirname, 'models', 'llm')
+  fs.mkdirSync(dir, { recursive: true })
+  for (const { name, ollamaBlob } of LLM_SOURCES) {
+    const dest = path.join(dir, name)
+    if (fs.existsSync(dest)) { console.log(`  [${name}] already present`); continue }
+    if (fs.existsSync(ollamaBlob)) {
+      console.log(`  [${name}] copying from ollama cache (${(fs.statSync(ollamaBlob).size/1e9).toFixed(2)} GB)...`)
+      fs.copyFileSync(ollamaBlob, dest)
+      console.log(`  [${name}] OK`)
+    } else {
+      console.log(`  [${name}] missing; set LLAMA_MODEL_PATH or run: ollama pull llama3.2:1b`)
+    }
+  }
+}
 
 const GATEWAYS = [
   'https://dweb.link/ipfs',
@@ -71,6 +95,10 @@ export async function downloadModels() {
   for (const [name, config] of Object.entries(MODELS)) {
     await downloadModel(name, config)
   }
+  console.log('\n[llm] staging GGUF into models/llm/')
+  await stageLlmModels()
+  console.log('\n[whisper] will auto-download on first use → models/whisper/')
+  console.log('[omnivoice] will auto-download on first use → models/omnivoice/')
   console.log('\nAll models ready.')
 }
 

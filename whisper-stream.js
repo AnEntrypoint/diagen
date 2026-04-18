@@ -1,10 +1,25 @@
 import { transcribe } from './discord-whisper.js'
 import fs from 'fs'
+import path from 'path'
 import { encodeWAV } from './server-utils.mjs'
 
 const SAMPLE_RATE = 48000
 const DEBOUNCE_MS = 600
 const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.6
+const DEBUG_DUMP = process.env.DEBUG_DUMP_AUDIO === '1'
+const DEBUG_DUMP_DIR = path.join('logs', 'debug-audio')
+const DEBUG_DUMP_KEEP = Number(process.env.DEBUG_DUMP_KEEP || 20)
+
+function rotateDumps() {
+  try {
+    if (!fs.existsSync(DEBUG_DUMP_DIR)) return
+    const files = fs.readdirSync(DEBUG_DUMP_DIR)
+      .filter(f => f.endsWith('.wav'))
+      .map(f => ({ f, m: fs.statSync(path.join(DEBUG_DUMP_DIR, f)).mtimeMs }))
+      .sort((a,b) => b.m - a.m)
+    for (const { f } of files.slice(DEBUG_DUMP_KEEP)) fs.unlinkSync(path.join(DEBUG_DUMP_DIR, f))
+  } catch {}
+}
 
 const sessions = new Map()
 
@@ -91,15 +106,17 @@ export async function finalizeAndClear(userId) {
   try {
     const result = await transcribe(pcmBuffer, SAMPLE_RATE)
     const text = (result.text || '').trim()
-    try {
+    if (DEBUG_DUMP) try {
+      fs.mkdirSync(DEBUG_DUMP_DIR, { recursive: true })
       const total = dumpChunks.reduce((a,c) => a + c.length, 0)
       const merged = new Float32Array(total)
       let off = 0
       for (const c of dumpChunks) { merged.set(c, off); off += c.length }
       const wav = encodeWAV(merged, SAMPLE_RATE)
-      const path = `debug-${userId}-${Date.now()}.wav`
-      fs.writeFileSync(path, wav)
-      console.log(`[stream] uid=${userId} 🎧 dumped ${path} (${(wav.length/1024).toFixed(1)}KB)`)
+      const out = path.join(DEBUG_DUMP_DIR, `${userId}-${Date.now()}.wav`)
+      fs.writeFileSync(out, wav)
+      rotateDumps()
+      console.log(`[stream] uid=${userId} 🎧 dumped ${out} (${(wav.length/1024).toFixed(1)}KB)`)
     } catch (e) { console.error('[stream] dump fail:', e.message) }
     console.log(`[stream] uid=${userId} finalize samples=${totalSamples} → "${text.slice(0,80)}"`)
     return { text, confidence: result.confidence }

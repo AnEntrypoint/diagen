@@ -1,13 +1,26 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { getLlama, LlamaChatSession } from 'node-llama-cpp'
 
-const DEFAULT_OLLAMA_BLOB = path.join(
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const REPO_LLM_DIR = path.join(__dirname, 'models', 'llm')
+const OLLAMA_BLOB = path.join(
   os.homedir(),
   '.ollama/models/blobs/sha256-74701a8c35f6c8d9a4b91f3f3497643001d63e0c7a84e085bed452548fa88d45'
 )
-const MODEL_PATH = process.env.LLAMA_MODEL_PATH || DEFAULT_OLLAMA_BLOB
+
+function resolveModelPath() {
+  if (process.env.LLAMA_MODEL_PATH) return process.env.LLAMA_MODEL_PATH
+  if (fs.existsSync(REPO_LLM_DIR)) {
+    const ggufs = fs.readdirSync(REPO_LLM_DIR).filter(f => f.endsWith('.gguf'))
+    if (ggufs.length) return path.join(REPO_LLM_DIR, ggufs[0])
+  }
+  return OLLAMA_BLOB
+}
+
+const MODEL_PATH = resolveModelPath()
 const CONTEXT_SIZE = Number(process.env.LLAMA_CONTEXT_SIZE || 2048)
 const GPU_LAYERS = process.env.LLAMA_GPU_LAYERS
 

@@ -15,9 +15,12 @@ function startTtsProcess() {
   if (ttsProcess) return Promise.resolve()
 
   return new Promise((resolve, reject) => {
+    const HF_CACHE = path.join(__dirname, 'models', 'omnivoice')
+    fs.mkdirSync(HF_CACHE, { recursive: true })
     ttsProcess = spawn('uv', ['run', 'python', SERVER_SCRIPT], {
       cwd: OMNIVOICE_REPO,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, HF_HOME: HF_CACHE, HUGGINGFACE_HUB_CACHE: HF_CACHE, TRANSFORMERS_CACHE: HF_CACHE },
     })
 
     let stderrOutput = ''

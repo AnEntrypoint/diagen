@@ -28,3 +28,9 @@ encode_venv/
 .claude/
 .codeinsight
 .plugkit-browser-profile/
+
+debug-*.wav
+voice-pipeline-test-results.json
+logs/
+*.tmp
+
