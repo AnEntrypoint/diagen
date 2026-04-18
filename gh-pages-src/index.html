@@ -579,8 +579,8 @@
     </div>
     <div class="feature-card">
       <div class="feature-icon fi-orange">&#9889;</div>
-      <h3>IPFS Model Distribution</h3>
-      <p>AI models are distributed via IPFS content IDs. The included download script fetches all required model files before first run.</p>
+      <h3>Git LFS Model Distribution</h3>
+      <p>All AI model weights ship in-repo via Git LFS. <code>git lfs pull</code> after clone fetches every required file (~2 GB).</p>
     </div>
   </div>
 </section>
@@ -636,8 +636,8 @@
       <div class="stack-item">
         <div class="stack-item-icon">&#127760;</div>
         <div class="stack-item-info">
-          <div class="stack-item-name">IPFS</div>
-          <div class="stack-item-desc">Decentralized model distribution</div>
+          <div class="stack-item-name">Git LFS</div>
+          <div class="stack-item-desc">In-repo model weight distribution</div>
         </div>
       </div>
       <div class="stack-item">
@@ -663,17 +663,16 @@
       </div>
       <span>Terminal</span>
     </div>
-    <pre><span class="c-comment"># 1. Clone the repository</span>
+    <pre><span class="c-comment"># 1. Clone the repository (with LFS)</span>
+<span class="c-cmd">git lfs install</span>
 <span class="c-cmd">git clone</span> <span class="c-str">https://github.com/AnEntrypoint/diagen.git</span>
 <span class="c-cmd">cd</span> diagen
+<span class="c-cmd">git lfs pull</span>
 
 <span class="c-comment"># 2. Install dependencies</span>
 <span class="c-cmd">npm install</span>
 
-<span class="c-comment"># 3. Download AI models via IPFS</span>
-<span class="c-cmd">node</span> download-models.js
-
-<span class="c-comment"># 4. Start the server</span>
+<span class="c-comment"># 3. Start the server</span>
 <span class="c-cmd">npm start</span>
 
 <span class="c-comment"># Open http://localhost:8080 in your browser</span></pre>

@@ -20,8 +20,11 @@ Discord voice → dispipe/client → discord-vad.js → Whisper STT → llama.cp
 ## Setup
 
 ```bash
+git lfs install
+git clone https://github.com/AnEntrypoint/diagen.git
+cd diagen
+git lfs pull             # pulls model weights (~2GB)
 npm install
-npm run download-models   # populates models/{audio2afan,tts,llm}/
 cp .env.example .env
 # Edit .env: DISCORD_TOKEN, GUILD_ID, CHANNEL_ID
 node server.js
@@ -29,15 +32,17 @@ node server.js
 
 ## Models
 
-All models are localized under `models/` (gitignored). Auto-populated by `npm run download-models` or on first use:
+All model weights ship in-repo via **Git LFS** under `models/`. Run `git lfs pull` after cloning.
 
-| Dir | Source | Notes |
+| Dir | Contents | Size |
 |---|---|---|
-| `models/llm/*.gguf` | copied from `~/.ollama/models/blobs/` | Override with `LLAMA_MODEL_PATH` |
-| `models/whisper/` | HuggingFace `Xenova/whisper-base` | Auto-download on first STT call |
-| `models/omnivoice/` | HuggingFace (via `HF_HOME`) | Auto-download on first TTS call |
-| `models/audio2afan/` | IPFS (see `download-models.js`) | Blendshape model |
-| `models/tts/` | IPFS (see `download-models.js`) | Mimi/flow ONNX weights |
+| `models/llm/*.gguf` | llama3.2-1b Q8_0 GGUF | ~1.3 GB |
+| `models/audio2afan/` | ONNX + NPZ blendshape model | ~455 MB |
+| `models/tts/` | Mimi + flow ONNX, tokenizer | ~199 MB |
+| `models/whisper/` | Xenova/whisper-base ONNX | ~150 MB |
+| `models/omnivoice/` | HF cache (gitignored; auto-downloaded on first TTS call) | ~500 MB |
+
+Override LLM path with `LLAMA_MODEL_PATH`; defaults to first `.gguf` in `models/llm/`.
 
 ## Environment
 

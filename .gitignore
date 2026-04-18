@@ -1,5 +1,4 @@
 node_modules/
-models/
 .env
 .env.local
 .env.*.local
@@ -33,4 +32,7 @@ debug-*.wav
 voice-pipeline-test-results.json
 logs/
 *.tmp
+
+# Python HF cache — populated at runtime, too large/messy for git
+models/omnivoice/
 

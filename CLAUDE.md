@@ -1,20 +1,27 @@
 # Diagen Project Notes
 
-## Model — Non-Negotiable
+## Model Distribution — Git LFS
+
+All AI model weights ship in-repo. Two distribution paths:
+
+**Server-side models (via Git LFS):** `models/llm/`, `models/audio2afan/`, `models/tts/`, `models/whisper/`.
+LFS patterns in `.gitattributes`: `*.onnx`, `*.bin`, `*.pth`, `*.pt`, `*.gguf`, `*.npz`, `*.vrm`, `*.safetensors`, `models/**/tokenizer.model`.
+After `git clone`, run `git lfs pull` to fetch weights (~2 GB). Verify with `node download-models.js` (no download; just an LFS-aware presence check that warns on pointer files).
+
+**Browser demo (raw git blobs, NOT LFS):** GitHub Pages serves raw git blobs and does not resolve LFS pointers, so the browser ONNX model must stay as plain bytes. To stay under GitHub's per-file limit, `gh-pages-src/demo/model/onnx/*.onnx` is split into `≤99MB` `.part*` chunks. These paths carry explicit LFS exclusions in `.gitattributes` (`!filter !diff !merge -text`). The fetch interceptor in `gh-pages-src/demo/worker.js` reassembles the parts at load time.
+The browser voice safetensors (`gh-pages-src/demo/voices/*.safetensors`) and `Cleetus.vrm` are also excluded from LFS for the same reason.
+
+## Browser Demo Model — Non-Negotiable
 
 The browser demo uses Qwen3.5-VL 0.8B abliterated with identity-override LoRA merged, quantized to q4 ONNX.
-
 - Source: bobber/routangseng-qwen35-0.8b-abliterated-lora-onnx (HuggingFace)
 - Quantization: q4 via MatMulNBitsQuantizer (decoder), fp16 (embed_tokens, WebGPU), q8 (vision_encoder)
-- Delivery: real git blobs split into ≤99MB chunks served from GitHub Pages
-- No LFS. No remote model fetching. Local files only in browser worker.
-
-This model choice is non-negotiable. Do not substitute with a different model.
+- Delivery: raw git blobs split into ≤99MB chunks served from GitHub Pages. No LFS on this path — LFS would break Pages delivery.
 
 ## Dependencies
 
 - `sttttsmodels` is a local file dep (`file:../sttttsmodels`). Clone it as a sibling directory or `npm install` will fail.
-- `audio2afan` runs a postinstall download script. Use `npm install --ignore-scripts` when offline, then download models separately via `npm run download-models`.
+- `audio2afan` postinstall download: redundant now (weights ship in-repo via LFS). Safe to ignore or disable with `npm install --ignore-scripts`. `download-models.js` just verifies presence.
 
 ## Testing
 

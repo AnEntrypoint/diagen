@@ -5,8 +5,13 @@
 *.gguf filter=lfs diff=lfs merge=lfs -text
 *.npz filter=lfs diff=lfs merge=lfs -text
 *.vrm filter=lfs diff=lfs merge=lfs -text
+*.safetensors filter=lfs diff=lfs merge=lfs -text
+models/**/tokenizer.model filter=lfs diff=lfs merge=lfs -text
+
+# GH Pages serves raw git blobs (not LFS) — keep browser model chunks
+# and tokenizer/VRM as plain bytes, fetchable from Pages URLs.
 gh-pages-src/demo/model/onnx/*.onnx !filter !diff !merge -text
 gh-pages-src/demo/model/onnx/*.part* !filter !diff !merge -text
 gh-pages-src/demo/model/tokenizer.json !filter !diff !merge -text
-
 gh-pages-src/demo/Cleetus.vrm !filter !diff !merge -text
+gh-pages-src/demo/voices/*.safetensors !filter !diff !merge -text
