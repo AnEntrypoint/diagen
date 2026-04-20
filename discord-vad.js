@@ -55,6 +55,11 @@ function rms(samples) {
 }
 
 async function handleUtterance(userId, utteranceDurMs, peakRms) {
+  if (_currentAbort) {
+    console.log(`[vad] ⏸ pre-empting prior utterance for new uid=${userId}`)
+    try { _currentAbort.abort() } catch {}
+    _currentAbort = null
+  }
   _activeUtteranceCount++
   console.log(`[vad] ▶ utterance uid=${userId} dur=${(utteranceDurMs/1000).toFixed(2)}s peak=${peakRms.toFixed(4)} active=${_activeUtteranceCount}`)
 
@@ -63,7 +68,7 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
   const entry = { userId, startTime: Date.now() }
   _processingQueue.push(entry)
 
-  let preambleUsed = null
+  let preambleStaged = null
   try {
     const { text, confidence } = await finalizeAndClear(userId)
     if (abort.signal.aborted) { console.log(`[vad] uid=${userId} aborted before generate`); return }
@@ -71,21 +76,22 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
 
     const cleanText = (text || '').trim()
     const isUsable = cleanText && cleanText !== '[no speech detected]' && cleanText.length >= 2
-    if (isUsable && preambleReady() && Math.random() < 0.6) {
-      const pre = pickPreamble('thinking')
-      if (pre) {
-        const stereo = new Float32Array(pre.audio.length * 2)
-        for (let i = 0; i < pre.audio.length; i++) { stereo[i * 2] = pre.audio[i]; stereo[i * 2 + 1] = pre.audio[i] }
-        const durMs = (pre.audio.length / SAMPLE_RATE) * 1000
-        _botSpeakingUntil = Date.now() + durMs + BOT_SPEAK_TAIL_MS
-        pushAudioFrame(stereo)
-        preambleUsed = pre.text
-        console.log(`[vad] ⚡ preamble "${pre.text}" (${durMs.toFixed(0)}ms) — hiding LLM latency`)
-      }
+    if (isUsable && preambleReady()) {
+      preambleStaged = pickPreamble('thinking')
     }
     let firstChunkAt = null
     const onChunk = (monoChunk) => {
       if (abort.signal.aborted) return
+      if (preambleStaged) {
+        const pre = preambleStaged
+        preambleStaged = null
+        const preStereo = new Float32Array(pre.audio.length * 2)
+        for (let i = 0; i < pre.audio.length; i++) { preStereo[i * 2] = pre.audio[i]; preStereo[i * 2 + 1] = pre.audio[i] }
+        const preDurMs = (pre.audio.length / SAMPLE_RATE) * 1000
+        _botSpeakingUntil = Date.now() + preDurMs + BOT_SPEAK_TAIL_MS
+        pushAudioFrame(preStereo)
+        console.log(`[vad] ⚡ preamble "${pre.text}" (${preDurMs.toFixed(0)}ms) — attached to real response`)
+      }
       const stereo = new Float32Array(monoChunk.length * 2)
       for (let i = 0; i < monoChunk.length; i++) { stereo[i * 2] = monoChunk[i]; stereo[i * 2 + 1] = monoChunk[i] }
       const durMs = (monoChunk.length / SAMPLE_RATE) * 1000
@@ -94,7 +100,8 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
       pushAudioFrame(stereo)
       if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms dur=${durMs.toFixed(0)}ms`); clearStream(userId) }
     }
-    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk, preambleUsed)
+    const preambleHintText = preambleStaged ? preambleStaged.text : null
+    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk, preambleHintText)
     if (!monoOut || abort.signal.aborted) {
       console.log(`[vad] uid=${userId} no output (aborted=${abort.signal.aborted})`)
       return
