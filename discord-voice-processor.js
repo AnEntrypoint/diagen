@@ -126,15 +126,19 @@ function getVoiceReferenceText() {
   return voiceReferenceText
 }
 
-function buildPromptWithHistory(userText) {
+function buildUserMessage(userText) {
   const hist = recentHistory.slice(-MAX_HISTORY * 2)
-  const turns = []
+  if (hist.length === 0) return userText
+  const lines = ['Recent conversation so far:']
   for (const h of hist) {
-    if (h.role === 'user') turns.push(`Them: ${h.text}`)
-    else turns.push(`You: ${h.text}`)
+    if (h.role === 'user') lines.push(`They said: "${h.text}"`)
+    else lines.push(`You said: "${h.text}"`)
   }
-  turns.push(`Them: ${userText}`)
-  return turns.join('\n') + '\nYou:'
+  lines.push('')
+  lines.push(`They just said: "${userText}"`)
+  lines.push('')
+  lines.push('Reply with your next spoken turn only.')
+  return lines.join('\n')
 }
 
 export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, username = null) {
@@ -160,10 +164,11 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
 
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
-  const prompt = buildPromptWithHistory(userText)
-  console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length} prompt=${prompt.length}ch`)
+  const sys = characterSystemPrompt || undefined
+  const userMsg = buildUserMessage(userText)
+  console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length} sys=${sys?.length}ch user=${userText.length}ch`)
   const tGen = Date.now()
-  let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal)).trim()
+  let responseText = (await generateLLM(userMsg, sys, signal)).trim()
   const genMs = Date.now() - tGen
   console.log(`[pipe] ${tag} ✓ generate ${genMs}ms → "${responseText}"`)
   if (!responseText) return null
@@ -213,7 +218,8 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
-  const prompt = buildPromptWithHistory(userText)
+  const sys = characterSystemPrompt || undefined
+  const userMsg = buildUserMessage(userText)
   console.log(`[pipe] ${tag} ▶ stream-gen hist=${recentHistory.length}${preambleText ? ` (audio-preamble="${preambleText.slice(0,30)}")` : ''}`)
   const refText = getVoiceReferenceText()
   const tGen = Date.now()
@@ -266,7 +272,7 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   }
 
   try {
-    for await (const tok of generateTokens(prompt, characterSystemPrompt || undefined, signal)) {
+    for await (const tok of generateTokens(userMsg, sys, signal)) {
       if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
       pending += tok
       if (responseText.length + pending.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
@@ -307,9 +313,10 @@ export function startSpeculativeGenerate(userId, userText, username) {
   if (cached && cached.userText === userText) return
   if (cached && cached.abort) cached.abort.abort()
   const speaker = username || `user${String(userId).slice(-4)}`
-  const prompt = buildPromptWithHistory(userText)
+  const sys = characterSystemPrompt || undefined
+  const userMsg = buildUserMessage(userText)
   const abort = new AbortController()
-  const resultPromise = generateLLM(prompt, characterSystemPrompt || undefined, abort.signal).catch(() => null)
+  const resultPromise = generateLLM(userMsg, sys, abort.signal).catch(() => null)
   _speculativeCache.set(userId, { userText, abort, resultPromise })
   console.log(`[processor] 🔮 speculative LLM uid=${userId} on "${userText.slice(0,40)}"`)
 }

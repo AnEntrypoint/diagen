@@ -4,25 +4,25 @@ import fs from 'fs'
 
 const PREAMBLES = {
   thinking: [
-    'Well hold up now, let me think on that for a second.',
-    'Hmm, alright, give me just a second here.',
-    'Ah, okay okay, let me see what I got for you.',
-    'Yeah yeah, hang on, I was just finishing up.',
-    'Alright, let me put this one together real quick.',
-    'One second now, thinking about that one.',
-    'Hmm, good question — lemme chew on that a bit.',
+    'Well alright.',
+    'Hm, alright now.',
+    'Yeah, lemme see.',
+    'Alright, hold on.',
+    'Hmm.',
+    'Oh yeah?',
+    'Huh, alright.',
   ],
   acknowledge: [
-    'Yeah, I hear you loud and clear on that.',
-    'Right, for sure, no worries at all.',
-    'Yeah yeah, makes sense to me.',
-    'Mhm, I feel you on that one.',
-    'Gotcha, that tracks.',
+    'Yeah.',
+    'Mhm.',
+    'Right.',
+    'Sure thing.',
+    'Gotcha.',
   ],
   laugh: [
-    'Ha, that\'s a good one right there.',
-    'Hahah, you got me with that one.',
-    'Heh, for real now.',
+    'Heh.',
+    'Ha.',
+    'Hahah.',
   ],
 }
 
