@@ -30,11 +30,10 @@ function startTtsProcess() {
   if (processReady) return Promise.resolve()
   if (startPromise) return startPromise
   startPromise = new Promise((resolve, reject) => {
-    fs.mkdirSync(HF_CACHE, { recursive: true })
     const pythonCmd = process.env.POCKET_TTS_PYTHON || 'python'
     ttsProcess = spawn(pythonCmd, [SERVER_SCRIPT], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, HF_HOME: HF_CACHE, HUGGINGFACE_HUB_CACHE: HF_CACHE, TRANSFORMERS_CACHE: HF_CACHE, PYTHONUNBUFFERED: '1' },
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
     })
     let stderrBuf = ''
     const readyTimeout = setTimeout(() => {
