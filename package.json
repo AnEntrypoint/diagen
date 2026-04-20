@@ -8,8 +8,6 @@
     "download-models": "node download-models.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:voice": "node test-voice.js",
-    "inspect": "node inspect-log.js",
     "postinstall": "node -e \"const fs=require('fs'),p='node_modules/@xenova/transformers/node_modules/sharp';fs.existsSync(p)&&fs.rmSync(p,{recursive:true,force:true})&&console.log('[postinstall] removed nested sharp')\""
   },
   "keywords": [],
@@ -20,17 +18,14 @@
     "@discordjs/voice": "^0.19.2",
     "@mlc-ai/web-llm": "^0.2.82",
     "@pixiv/three-vrm": "^3.4.5",
-    "@sctg/sentencepiece-js": "^1.3.3",
     "@xenova/transformers": "^2.6.5",
     "audio2afan": "^1.0.1",
     "discord.js": "^14.14.1",
     "dispipe": "file:../dispipe",
     "express": "^5.2.1",
-    "jszip": "^3.10.1",
     "node-llama-cpp": "^3.18.1",
     "onnxruntime-node": "^1.24.1",
     "prism-media": "^1.3.5",
-    "sharp": "^0.34.5",
     "three": "^0.182.0"
   },
   "devDependencies": {

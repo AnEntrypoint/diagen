@@ -78,6 +78,10 @@ async function connectToVoiceChannel(guildId, channelId) {
 
   const { voiceConnection, voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
   currentChannelState = { guildId, channelId }
+  voiceConnection.on('error', (err) => {
+    console.error('[discord] voice connection error:', err?.message || err)
+    lastError.value = { message: `voice: ${err?.message || err}`, timestamp: Date.now() }
+  })
   console.log('[discord] Connected to voice channel')
 
   initVoicePlayer(voiceConnection)
