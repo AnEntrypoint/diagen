@@ -47,18 +47,33 @@ async function getModel() {
   return modelPromise
 }
 
-async function newSession(system) {
-  const model = await getModel()
-  const context = await model.createContext({ contextSize: CONTEXT_SIZE })
-  return new LlamaChatSession({ contextSequence: context.getSequence(), systemPrompt: system })
+const sessionCache = new Map()
+
+async function acquireSession(system) {
+  const key = system || '__default__'
+  let entry = sessionCache.get(key)
+  if (!entry) {
+    const model = await getModel()
+    const context = await model.createContext({ contextSize: CONTEXT_SIZE })
+    const session = new LlamaChatSession({ contextSequence: context.getSequence(), systemPrompt: system })
+    entry = { session, context, chain: Promise.resolve() }
+    sessionCache.set(key, entry)
+    console.log(`[llamacpp] session created (cached, ${sessionCache.size} total) ctx=${CONTEXT_SIZE}`)
+  }
+  const prev = entry.chain
+  let release
+  entry.chain = new Promise(r => { release = r })
+  await prev
+  await entry.session.resetChatHistory()
+  return { session: entry.session, release }
 }
 
 const GEN_OPTS = { temperature: 0.9, topP: 0.92, maxTokens: 300, repeatPenalty: { penalty: 1.25 }, customStopTriggers: ['\n\n'] }
 
 export async function generate(prompt, system = 'You are a helpful assistant. Be concise.', signal) {
   const t0 = Date.now()
+  const { session, release } = await acquireSession(system)
   try {
-    const session = await newSession(system)
     const out = await session.prompt(prompt, { ...GEN_OPTS, signal })
     console.log(`[llamacpp] gen ${Date.now()-t0}ms chars=${out.length}`)
     return out
@@ -66,11 +81,13 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
     if (err.name === 'AbortError') { console.log(`[llamacpp] aborted after ${Date.now()-t0}ms`); throw err }
     console.error(`[llamacpp] error after ${Date.now()-t0}ms:`, err.message)
     throw err
+  } finally {
+    release()
   }
 }
 
 export async function* generateTokens(prompt, system = 'You are a helpful assistant. Be concise.', signal) {
-  const session = await newSession(system)
+  const { session, release } = await acquireSession(system)
   const queue = []
   let resolveNext = null
   let done = false
@@ -84,12 +101,16 @@ export async function* generateTokens(prompt, system = 'You are a helpful assist
     onTextChunk: onToken,
   }).then(() => { done = true; if (resolveNext) { const r = resolveNext; resolveNext = null; r() } },
          (e) => { done = true; if (resolveNext) { const r = resolveNext; resolveNext = null; r() } throw e })
-  while (true) {
-    if (queue.length) { yield queue.shift(); continue }
-    if (done) break
-    await new Promise(r => { resolveNext = r })
+  try {
+    while (true) {
+      if (queue.length) { yield queue.shift(); continue }
+      if (done) break
+      await new Promise(r => { resolveNext = r })
+    }
+    await promptPromise
+  } finally {
+    release()
   }
-  await promptPromise
 }
 
 export async function generateStream(prompt, system = 'You are a helpful assistant. Be concise.') {

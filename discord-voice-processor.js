@@ -127,7 +127,7 @@ function getVoiceReferenceText() {
   return voiceReferenceText
 }
 
-function buildPromptWithHistory(userText, username, preambleText = null) {
+function buildPromptWithHistory(userText) {
   const hist = recentHistory.slice(-MAX_HISTORY * 2)
   const turns = []
   for (const h of hist) {
@@ -135,8 +135,7 @@ function buildPromptWithHistory(userText, username, preambleText = null) {
     else turns.push(`You: ${h.text}`)
   }
   turns.push(`Them: ${userText}`)
-  const tail = preambleText ? `You: ${preambleText} ` : `You:`
-  return turns.join('\n') + '\n' + tail
+  return turns.join('\n') + '\nYou:'
 }
 
 export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, username = null) {
@@ -162,7 +161,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
 
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
-  const prompt = buildPromptWithHistory(userText, speaker)
+  const prompt = buildPromptWithHistory(userText)
   console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length} prompt=${prompt.length}ch`)
   const tGen = Date.now()
   let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal)).trim()
@@ -215,8 +214,8 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
-  const prompt = buildPromptWithHistory(userText, speaker, preambleText)
-  console.log(`[pipe] ${tag} ▶ stream-gen hist=${recentHistory.length}${preambleText ? ` preamble="${preambleText}"` : ''}`)
+  const prompt = buildPromptWithHistory(userText)
+  console.log(`[pipe] ${tag} ▶ stream-gen hist=${recentHistory.length}${preambleText ? ` (audio-preamble="${preambleText.slice(0,30)}")` : ''}`)
   const refText = getVoiceReferenceText()
   const tGen = Date.now()
 
@@ -309,7 +308,7 @@ export function startSpeculativeGenerate(userId, userText, username) {
   if (cached && cached.userText === userText) return
   if (cached && cached.abort) cached.abort.abort()
   const speaker = username || `user${String(userId).slice(-4)}`
-  const prompt = buildPromptWithHistory(userText, speaker)
+  const prompt = buildPromptWithHistory(userText)
   const abort = new AbortController()
   const resultPromise = generateLLM(prompt, characterSystemPrompt || undefined, abort.signal).catch(() => null)
   _speculativeCache.set(userId, { userText, abort, resultPromise })
