@@ -36,3 +36,4 @@ logs/
 # Python HF cache — populated at runtime, too large/messy for git
 models/omnivoice/
 
+models/pocket-tts/

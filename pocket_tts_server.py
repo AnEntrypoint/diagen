@@ -7,13 +7,36 @@ import numpy as np
 os.environ.setdefault('HF_HUB_DISABLE_TELEMETRY', '1')
 
 print('[pocket-tts] Loading model...', file=sys.stderr, flush=True)
+import torch
 from pocket_tts import TTSModel
 
 model = TTSModel.load_model()
+
+device = 'cpu'
+if os.environ.get('POCKET_TTS_DEVICE', 'cpu') == 'cuda' and torch.cuda.is_available():
+    try:
+        model = model.cuda()
+        device = 'cuda'
+    except Exception as e:
+        print(f'[pocket-tts] cuda() failed, staying on cpu: {e}', file=sys.stderr, flush=True)
+
 sample_rate = int(getattr(model, 'sample_rate', 24000))
-print(f'[pocket-tts] Model ready sr={sample_rate}', file=sys.stderr, flush=True)
+print(f'[pocket-tts] Model ready sr={sample_rate} device={device}', file=sys.stderr, flush=True)
 
 _state_cache = {}
+
+def _move_state(obj, target_device, target_dtype):
+    import torch
+    if isinstance(obj, torch.Tensor):
+        if obj.is_floating_point():
+            return obj.to(device=target_device, dtype=target_dtype)
+        return obj.to(device=target_device)
+    if isinstance(obj, dict):
+        return {k: _move_state(v, target_device, target_dtype) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        t = type(obj)
+        return t(_move_state(v, target_device, target_dtype) for v in obj)
+    return obj
 
 def get_voice_state(ref_audio_path):
     key = ref_audio_path or '__default__'
@@ -22,6 +45,12 @@ def get_voice_state(ref_audio_path):
         return st
     src = ref_audio_path if ref_audio_path else 'alba'
     st = model.get_state_for_audio_prompt(src)
+    try:
+        target_dtype = next(model.parameters()).dtype
+        target_device = next(model.parameters()).device
+        st = _move_state(st, target_device, target_dtype)
+    except StopIteration:
+        pass
     _state_cache[key] = st
     return st
 
