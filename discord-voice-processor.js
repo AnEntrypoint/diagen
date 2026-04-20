@@ -160,7 +160,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length} prompt=${prompt.length}ch`)
   const tGen = Date.now()
   let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal))
-  const nextTurn = responseText.search(/\n\s*[A-Za-z`][\w`.\-]{0,30}\s*:/)
+  const nextTurn = responseText.search(/(?:^|\n|\s)[_*`]{0,2}[A-Za-z][\w`.\- ]{0,24}[_*`]{0,2}\s*:\s/)
   if (nextTurn >= 0) responseText = responseText.slice(0, nextTurn)
   responseText = responseText.trim()
   const genMs = Date.now() - tGen
@@ -269,7 +269,7 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     for await (const tok of generateTokens(prompt, characterSystemPrompt || undefined, signal)) {
       if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
       accum += tok
-      const turnIdx = accum.search(/\n\s*[_*`]?[A-Z][\w`.\-]{0,20}[_*`]?\s*:/)
+      const turnIdx = accum.search(/(?:^|\n|\s)[_*`]{0,2}[A-Za-z][\w`.\- ]{0,24}[_*`]{0,2}\s*:\s/)
       if (turnIdx >= 0) { accum = accum.slice(0, turnIdx); stopRequested = true; break }
       if (responseText.length + accum.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
       const isFirst = !firstAudioAt && allAudio.length === 0 && ttsChain === Promise.resolve ? true : (allAudio.length === 0 && !firstAudioAt)
