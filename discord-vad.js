@@ -129,14 +129,32 @@ async function handleUtterance(userId, utteranceDurMs, peakRms) {
   }
 }
 
+const TARGET_RMS = 0.08
+const MAX_GAIN = 15
+const MIN_GAIN = 1
+const GAIN_ATTACK = 0.15
+
 export function onPcmChunk(userId, stereoF32) {
   const now = Date.now()
   const botSpeaking = now < _botSpeakingUntil
   const monoLen = stereoF32.length / 2
-  const f32 = new Float32Array(monoLen)
-  for (let i = 0; i < monoLen; i++) f32[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
+  const raw = new Float32Array(monoLen)
+  for (let i = 0; i < monoLen; i++) raw[i] = (stereoF32[i * 2] + stereoF32[i * 2 + 1]) * 0.5
 
   const buf = getOrCreateBuffer(userId)
+
+  const rawRms = rms(raw)
+  if (buf.gain === undefined) buf.gain = 1
+  if (rawRms > 0.001) {
+    const wantGain = Math.max(MIN_GAIN, Math.min(MAX_GAIN, TARGET_RMS / rawRms))
+    buf.gain = buf.gain * (1 - GAIN_ATTACK) + wantGain * GAIN_ATTACK
+  }
+  const g = buf.gain
+  const f32 = new Float32Array(monoLen)
+  for (let i = 0; i < monoLen; i++) {
+    const v = raw[i] * g
+    f32[i] = v > 1 ? 1 : v < -1 ? -1 : v
+  }
 
   const level = rms(f32)
   const effectiveThreshold = botSpeaking ? INTERRUPT_THRESHOLD : SILENCE_THRESHOLD_BASE
