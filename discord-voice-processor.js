@@ -7,6 +7,14 @@ import fs from 'fs'
 const SAMPLE_RATE_DISCORD = 48000
 const SAMPLE_RATE_TTS_FALLBACK = 24000
 const MIN_TRANSCRIPT_CHARS = 2
+const NON_SPEECH_RE = /^[\s\[\(\*_`]*(BLANK_AUDIO|no speech detected|laughter|laughs|chuckles|chuckle|music|applause|silence|inaudible|background noise|coughs?|sighs?|breathing|breath|clears throat)[\s\]\)\*_`\.,!\?-]*$/i
+
+function isNonSpeech(text) {
+  if (!text) return true
+  const stripped = text.replace(/[\[\(].*?[\]\)]/g, '').replace(/\*.*?\*/g, '').trim()
+  if (stripped.length < MIN_TRANSCRIPT_CHARS) return true
+  return NON_SPEECH_RE.test(text.trim())
+}
 
 let voiceReferencePath = null
 let voiceReferenceText = null
@@ -141,8 +149,8 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   console.log(`[pipe] ${tag} ✓ transcribe ${transMs}ms conf=${transcription.confidence.toFixed(2)} → "${userText}"`)
 
   if (signal?.aborted) { console.log(`[pipe] ${tag} ✗ aborted after transcribe`); return null }
-  if (!userText || userText === '[no speech detected]' || userText.length < MIN_TRANSCRIPT_CHARS) {
-    console.log(`[pipe] ${tag} ✗ skip: trivial transcript (${userText.length}ch)`)
+  if (isNonSpeech(userText)) {
+    console.log(`[pipe] ${tag} ✗ skip: non-speech "${userText}"`)
     return null
   }
 
@@ -216,8 +224,8 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   console.log(`[pipe] ${tag} text="${userText}" conf=${(confidence||0).toFixed(2)}`)
 
   if (signal?.aborted) return null
-  if (!userText || userText === '[no speech detected]' || userText.length < MIN_TRANSCRIPT_CHARS) {
-    console.log(`[pipe] ${tag} ✗ skip: trivial transcript`)
+  if (isNonSpeech(userText)) {
+    console.log(`[pipe] ${tag} ✗ skip: non-speech "${userText}"`)
     return null
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }

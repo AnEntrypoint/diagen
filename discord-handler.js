@@ -72,9 +72,26 @@ async function initDiscordBot(onUserAudio, onCommand, onReady) {
   }
 }
 
+async function forceClearBotVoiceState(guildId) {
+  const token = process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN
+  if (!token) return
+  try {
+    const r = await fetch(`https://discord.com/api/v10/guilds/${guildId}/members/${discordClient.user.id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_id: null }),
+    })
+    console.log(`[discord] REST force-disconnect status=${r.status} (clears ghost voice session)`)
+  } catch (err) {
+    console.log('[discord] force-disconnect skipped:', err?.message || err)
+  }
+}
+
 async function connectToVoiceChannel(guildId, channelId) {
   if (!discordClient) throw new Error('Discord bot not initialized')
   if (!isConnected) throw new Error('Discord bot not ready')
+
+  await forceClearBotVoiceState(guildId)
 
   const { voiceConnection, voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
   currentChannelState = { guildId, channelId }
