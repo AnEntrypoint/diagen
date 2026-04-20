@@ -6,7 +6,7 @@ import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
-import { synthesize as synthesizeOmniVoice } from './omnivoice-tts-bridge.js'
+import { synthesize as synthesizeOmniVoice } from './pocket-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import os from 'os'
 

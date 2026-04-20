@@ -1,6 +1,6 @@
 import { transcribe } from './discord-whisper.js'
 import { resampleAudio } from './server-utils.mjs'
-import { synthesize } from './omnivoice-tts-bridge.js'
+import { synthesize, synthesizeStream } from './pocket-tts-bridge.js'
 import { generate as generateLLM, generateTokens, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import fs from 'fs'
 
@@ -246,27 +246,30 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     if (!piece) return
     responseText += (responseText ? ' ' : '') + piece
     const tc = Date.now()
-    const synthPromise = (async () => {
-      if (signal?.aborted || stopRequested) return null
+    const collected = []
+    const sentenceDone = (async () => {
       try {
-        const { audio, sampleRate: sr } = await synthesize(piece, refText ? voiceReferencePath : null, refText || null)
-        if (signal?.aborted || stopRequested) return null
-        const resampled = resampleAudio(audio, sr || SAMPLE_RATE_TTS_FALLBACK, SAMPLE_RATE_DISCORD)
-        console.log(`[pipe] ${tag} ✓ tts ${Date.now()-tc}ms "${piece.slice(0,40)}"`)
-        return resampled
+        let prevEmit = emitChain
+        const onStreamChunk = (chunkAudio, sr) => {
+          if (signal?.aborted || stopRequested) return
+          const resampled = resampleAudio(chunkAudio, sr || SAMPLE_RATE_TTS_FALLBACK, SAMPLE_RATE_DISCORD)
+          collected.push(resampled)
+          prevEmit = prevEmit.then(() => {
+            if (signal?.aborted || stopRequested) return
+            if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms`) }
+            if (onChunk) onChunk(resampled)
+            allAudio.push(resampled)
+          })
+          emitChain = prevEmit
+        }
+        await synthesizeStream(piece, refText ? voiceReferencePath : null, refText || null, onStreamChunk)
+        console.log(`[pipe] ${tag} ✓ tts-stream ${Date.now()-tc}ms chunks=${collected.length} "${piece.slice(0,40)}"`)
       } catch (err) {
         console.error(`[pipe] ${tag} tts error:`, err.message)
-        return null
       }
     })()
-    ttsJobs.push(synthPromise)
-    emitChain = emitChain.then(async () => {
-      const resampled = await synthPromise
-      if (!resampled || signal?.aborted || stopRequested) return
-      if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms`) }
-      if (onChunk) onChunk(resampled)
-      allAudio.push(resampled)
-    })
+    ttsJobs.push(sentenceDone)
+    emitChain = emitChain.then(() => sentenceDone)
   }
 
   const tryFlush = () => {
