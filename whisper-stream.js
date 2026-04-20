@@ -1,9 +1,9 @@
 import { transcribe } from './discord-whisper.js'
 
 const SAMPLE_RATE = 48000
-const DEBOUNCE_MS = 300
-const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.3
-const STABILITY_MS = 650
+const DEBOUNCE_MS = 200
+const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.2
+const STABILITY_MS = 350
 const MIN_WORDS_TO_FIRE = 1
 
 const sessions = new Map()

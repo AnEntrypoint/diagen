@@ -356,6 +356,13 @@ async function start() {
         }
       }
 
+      try {
+        const llm = await import('./llm-llamacpp.js')
+        llm.warmup(getCharacterSystemPrompt() || undefined).catch(err => console.warn('[server] llm warmup:', err.message))
+      } catch (err) {
+        console.warn('[server] llm warmup import failed:', err.message)
+      }
+
       // Initialize Discord bot
       const onCommand = async (userId, prompt) => {
         const available = await isLLMAvailable()

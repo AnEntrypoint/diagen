@@ -134,4 +134,15 @@ export async function isAvailable() {
   }
 }
 
-export default { generate, generateTokens, generateStream, isAvailable }
+export async function warmup(systemPrompt) {
+  const t0 = Date.now()
+  try {
+    const { session, release } = await acquireSession(systemPrompt)
+    try { await session.prompt('hi', { ...GEN_OPTS, maxTokens: 4 }) } finally { release() }
+    console.log(`[llamacpp] warmup ${Date.now()-t0}ms`)
+  } catch (err) {
+    console.warn(`[llamacpp] warmup failed: ${err.message}`)
+  }
+}
+
+export default { generate, generateTokens, generateStream, isAvailable, warmup }

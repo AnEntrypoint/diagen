@@ -70,22 +70,20 @@ async function handleUtterance(userId, text, confidence) {
   const entry = { userId, startTime: Date.now() }
   _processingQueue.push(entry)
 
-  let preambleStaged = preambleReady() ? pickPreamble('thinking') : null
+  const preamblePick = preambleReady() ? pickPreamble('thinking') : null
+  if (preamblePick) {
+    const preStereo = new Float32Array(preamblePick.audio.length * 2)
+    for (let i = 0; i < preamblePick.audio.length; i++) { preStereo[i * 2] = preamblePick.audio[i]; preStereo[i * 2 + 1] = preamblePick.audio[i] }
+    const preDurMs = (preamblePick.audio.length / SAMPLE_RATE) * 1000
+    _botSpeakingUntil = Date.now() + preDurMs + BOT_SPEAK_TAIL_MS
+    pushAudioFrame(preStereo)
+    console.log(`[vad] ⚡ preamble (immediate) "${preamblePick.text}" (${preDurMs.toFixed(0)}ms)`)
+  }
   try {
     const username = _usernameResolver(userId)
     let firstChunkAt = null
     const onChunk = (monoChunk) => {
       if (abort.signal.aborted) return
-      if (preambleStaged) {
-        const pre = preambleStaged
-        preambleStaged = null
-        const preStereo = new Float32Array(pre.audio.length * 2)
-        for (let i = 0; i < pre.audio.length; i++) { preStereo[i * 2] = pre.audio[i]; preStereo[i * 2 + 1] = pre.audio[i] }
-        const preDurMs = (pre.audio.length / SAMPLE_RATE) * 1000
-        _botSpeakingUntil = Date.now() + preDurMs + BOT_SPEAK_TAIL_MS
-        pushAudioFrame(preStereo)
-        console.log(`[vad] ⚡ preamble "${pre.text}" (${preDurMs.toFixed(0)}ms)`)
-      }
       const stereo = new Float32Array(monoChunk.length * 2)
       for (let i = 0; i < monoChunk.length; i++) { stereo[i * 2] = monoChunk[i]; stereo[i * 2 + 1] = monoChunk[i] }
       const durMs = (monoChunk.length / SAMPLE_RATE) * 1000
@@ -94,7 +92,7 @@ async function handleUtterance(userId, text, confidence) {
       pushAudioFrame(stereo)
       if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms`) }
     }
-    const preambleHintText = preambleStaged ? preambleStaged.text : null
+    const preambleHintText = preamblePick ? preamblePick.text : null
     const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk, preambleHintText)
     if (!monoOut || abort.signal.aborted) { console.log(`[vad] uid=${userId} no output (aborted=${abort.signal.aborted})`); return }
     const totalDurMs = (monoOut.length / SAMPLE_RATE) * 1000

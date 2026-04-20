@@ -234,7 +234,8 @@ export async function processTranscript(rawText, confidence, userId, signal, use
 
   let pending = ''
   let responseText = ''
-  let ttsChain = Promise.resolve()
+  const ttsJobs = []
+  let emitChain = Promise.resolve()
   const allAudio = []
   let firstTokenAt = null
   let firstAudioAt = null
@@ -244,20 +245,27 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     const piece = sent.trim()
     if (!piece) return
     responseText += (responseText ? ' ' : '') + piece
-    ttsChain = ttsChain.then(async () => {
-      if (signal?.aborted || stopRequested) return
-      const tc = Date.now()
+    const tc = Date.now()
+    const synthPromise = (async () => {
+      if (signal?.aborted || stopRequested) return null
       try {
         const { audio, sampleRate: sr } = await synthesize(piece, refText ? voiceReferencePath : null, refText || null)
+        if (signal?.aborted || stopRequested) return null
         const resampled = resampleAudio(audio, sr || SAMPLE_RATE_TTS_FALLBACK, SAMPLE_RATE_DISCORD)
-        if (signal?.aborted || stopRequested) return
-        if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms`) }
         console.log(`[pipe] ${tag} ✓ tts ${Date.now()-tc}ms "${piece.slice(0,40)}"`)
-        if (onChunk) onChunk(resampled)
-        allAudio.push(resampled)
+        return resampled
       } catch (err) {
         console.error(`[pipe] ${tag} tts error:`, err.message)
+        return null
       }
+    })()
+    ttsJobs.push(synthPromise)
+    emitChain = emitChain.then(async () => {
+      const resampled = await synthPromise
+      if (!resampled || signal?.aborted || stopRequested) return
+      if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms`) }
+      if (onChunk) onChunk(resampled)
+      allAudio.push(resampled)
     })
   }
 
@@ -279,20 +287,30 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     pending = pending.slice(cut).trimStart()
   }
 
+  const speculative = consumeSpeculative(userId, userText)
   try {
-    for await (const tok of generateTokens(userMsg, sys, signal)) {
-      if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
-      pending += tok
-      if (responseText.length + pending.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
+    if (speculative) {
+      const specText = (await speculative) || ''
+      firstTokenAt = Date.now()
+      console.log(`[pipe] ${tag} ⚡ speculative-first-token ${firstTokenAt - t0}ms chars=${specText.length}`)
+      pending = specText.slice(0, MAX_RESPONSE_CHARS)
+      if (pending.length >= MAX_RESPONSE_CHARS) stopRequested = true
       tryFlush()
-      if (stopRequested) break
+    } else {
+      for await (const tok of generateTokens(userMsg, sys, signal)) {
+        if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
+        pending += tok
+        if (responseText.length + pending.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
+        tryFlush()
+        if (stopRequested) break
+      }
     }
   } catch (err) {
     if (err.name !== 'AbortError') throw err
   }
   const tail = pending.trim()
   if (!stopRequested && tail) flushSentence(tail)
-  await ttsChain
+  await emitChain
 
   responseText = responseText.trim()
   const genMs = Date.now() - tGen
@@ -327,6 +345,15 @@ export function startSpeculativeGenerate(userId, userText, username) {
   const resultPromise = generateLLM(userMsg, sys, abort.signal).catch(() => null)
   _speculativeCache.set(userId, { userText, abort, resultPromise })
   console.log(`[processor] 🔮 speculative LLM uid=${userId} on "${userText.slice(0,40)}"`)
+}
+
+export function consumeSpeculative(userId, userText) {
+  const c = _speculativeCache.get(userId)
+  if (!c) return null
+  if (c.userText !== userText) { if (c.abort) c.abort.abort(); _speculativeCache.delete(userId); return null }
+  _speculativeCache.delete(userId)
+  console.log(`[processor] ✨ speculative HIT uid=${userId} — reusing in-flight LLM`)
+  return c.resultPromise
 }
 
 export function cancelSpeculative(userId) {
