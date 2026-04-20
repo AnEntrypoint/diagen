@@ -273,8 +273,8 @@ export async function processTranscript(rawText, confidence, userId, signal, use
       if (turnIdx >= 0) { accum = accum.slice(0, turnIdx); stopRequested = true; break }
       if (responseText.length + accum.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
       const isFirst = !firstAudioAt && allAudio.length === 0 && ttsChain === Promise.resolve ? true : (allAudio.length === 0 && !firstAudioAt)
-      const splitRe = isFirst ? /^([\s\S]*?[,;:.!?])(\s+|$)/ : /^([\s\S]*?[.!?])(\s+|$)/
-      const minLen = isFirst ? 12 : 20
+      const splitRe = isFirst ? /^([\s\S]*?[,;:.!?\-])(\s+|$)/ : /^([\s\S]*?[.!?])(\s+|$)/
+      const minLen = isFirst ? 6 : 18
       let m
       let pending = ''
       while ((m = accum.match(splitRe))) {

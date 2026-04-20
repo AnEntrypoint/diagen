@@ -5,9 +5,9 @@ import { pick as pickPreamble, isReady as preambleReady } from './preamble-cache
 
 const SILENCE_THRESHOLD_BASE = 0.004
 const INTERRUPT_THRESHOLD = 0.025
-const SILENCE_DURATION_MS = 550
-const INTERRUPT_SILENCE_MS = 300
-const MIN_UTTERANCE_MS = 400
+const SILENCE_DURATION_MS = 380
+const INTERRUPT_SILENCE_MS = 280
+const MIN_UTTERANCE_MS = 350
 const MIN_SPEECH_SAMPLES = 48000 * 0.4
 const MAX_UTTERANCE_MS = 15000
 const SAMPLE_RATE = 48000
@@ -39,7 +39,7 @@ function getOrCreateBuffer(userId) {
     userBuffers.set(userId, { chunks: [], preroll: [], prerollSamples: 0, startTime: 0, lastVoiceTime: 0, processing: false, peakRms: 0, capturing: false })
     console.log(`[vad] new buffer for uid=${userId}`)
     onPartial(userId, (text, conf, prev) => {
-      if (conf > 0.2 && text.length >= 15 && text === prev) {
+      if (conf > 0.15 && text.length >= 8) {
         const username = _usernameResolver(userId)
         startSpeculativeGenerate(userId, text, username)
       }

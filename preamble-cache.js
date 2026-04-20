@@ -4,24 +4,25 @@ import fs from 'fs'
 
 const PREAMBLES = {
   thinking: [
-    'Mira, let me see...',
-    'Oye, hold on boy...',
-    'Hmm, yeah...',
-    'Ah, okay...',
-    'Eh, let me think...',
+    'Mira.',
+    'Oye.',
+    'Hmm.',
+    'Ah yeah.',
+    'Eh.',
+    'Hold on.',
+    'Sí sí.',
   ],
   acknowledge: [
-    'Yeah boy.',
-    'Sí, sí.',
+    'Yeah.',
+    'Sí.',
     'Oye.',
     'Mira.',
-    'Right right.',
+    'Right.',
   ],
   laugh: [
-    'Ha!',
-    'Hahah.',
-    'Oye, hah.',
-    'Eh eh.',
+    'Ha.',
+    'Hah.',
+    'Eh.',
   ],
 }
 

@@ -4,8 +4,8 @@ import path from 'path'
 import { encodeWAV } from './server-utils.mjs'
 
 const SAMPLE_RATE = 48000
-const DEBOUNCE_MS = 600
-const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.6
+const DEBOUNCE_MS = 400
+const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.4
 const DEBUG_DUMP = process.env.DEBUG_DUMP_AUDIO === '1'
 const DEBUG_DUMP_DIR = path.join('logs', 'debug-audio')
 const DEBUG_DUMP_KEEP = Number(process.env.DEBUG_DUMP_KEEP || 20)
@@ -99,8 +99,15 @@ export async function finalizeAndClear(userId) {
   const s = sessions.get(userId)
   if (!s) return { text: '', confidence: 0 }
   if (s.chunks.length === 0) return { text: s.latestText, confidence: s.latestConf }
-  const pcmBuffer = chunksToPcmBuffer(s.chunks)
   const totalSamples = s.totalSamples
+  const untranscribedSamples = totalSamples - s.lastTranscribeSamples
+  if (s.latestText && untranscribedSamples < SAMPLE_RATE * 0.3) {
+    const out = { text: s.latestText, confidence: s.latestConf }
+    console.log(`[stream] uid=${userId} finalize-skip (streaming covers ${(totalSamples/SAMPLE_RATE).toFixed(2)}s, tail=${(untranscribedSamples/SAMPLE_RATE).toFixed(2)}s) → "${out.text.slice(0,60)}"`)
+    clear(userId)
+    return out
+  }
+  const pcmBuffer = chunksToPcmBuffer(s.chunks)
   const dumpChunks = s.chunks.slice()
   clear(userId)
   try {
