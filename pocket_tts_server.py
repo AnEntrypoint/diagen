@@ -59,10 +59,19 @@ def to_int16_bytes(t):
     arr = np.clip(arr, -1.0, 1.0)
     return (arr * 32767.0).astype(np.int16).tobytes()
 
+import time
+
 def handle_generate(req_id, text, ref_audio_path, streaming):
+    t0 = time.time()
     state = get_voice_state(ref_audio_path)
+    t_state = time.time() - t0
     if streaming:
+        n = 0
+        t_first = None
+        total_samples = 0
         for chunk in model.generate_audio_stream(state, text):
+            if t_first is None: t_first = time.time() - t0
+            total_samples += chunk.shape[-1] if chunk.dim() > 0 else len(chunk)
             sys.stdout.write(json.dumps({
                 'id': req_id,
                 'chunk': True,
@@ -70,10 +79,20 @@ def handle_generate(req_id, text, ref_audio_path, streaming):
                 'sample_rate': sample_rate,
             }) + '\n')
             sys.stdout.flush()
+            n += 1
+        total = time.time() - t0
+        audio_sec = total_samples / sample_rate if total_samples else 0
+        rt = (audio_sec / total) if total > 0 else 0
+        print(f'[pocket-tts] id={req_id} stream chunks={n} first={t_first or 0:.2f}s total={total:.2f}s audio={audio_sec:.2f}s RT={rt:.2f}x text={text[:40]!r}', file=sys.stderr, flush=True)
         sys.stdout.write(json.dumps({'id': req_id, 'done': True, 'sample_rate': sample_rate}) + '\n')
         sys.stdout.flush()
     else:
         audio = model.generate_audio(state, text)
+        total = time.time() - t0
+        samples = audio.shape[-1] if audio.dim() > 0 else len(audio)
+        audio_sec = samples / sample_rate
+        rt = audio_sec / total if total > 0 else 0
+        print(f'[pocket-tts] id={req_id} one-shot total={total:.2f}s audio={audio_sec:.2f}s RT={rt:.2f}x text={text[:40]!r}', file=sys.stderr, flush=True)
         sys.stdout.write(json.dumps({
             'id': req_id,
             'success': True,

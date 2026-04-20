@@ -14,6 +14,7 @@ let startPromise = null
 let rl = null
 const pending = new Map()
 let nextId = 1
+let queueChain = Promise.resolve()
 
 function dispatch(obj) {
   const id = obj.id
@@ -66,34 +67,50 @@ function startTtsProcess() {
   return startPromise
 }
 
-export async function synthesize(text, refAudioPath, _refText) {
+function enqueue(fn) {
+  const prev = queueChain
+  queueChain = prev.then(fn, fn)
+  return queueChain
+}
+
+export async function synthesize(text, refAudioPath, _refText, signal) {
   if (!text) throw new Error('text required')
   await startTtsProcess()
-  const id = nextId++
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('pocket-tts synth timeout (120s)')) }, 120000)
-    pending.set(id, {
-      resolve: (obj) => { clearTimeout(timeout); resolve(decodeAudio(obj)) },
-      reject: (err) => { clearTimeout(timeout); reject(err) },
+  return enqueue(() => {
+    if (signal?.aborted) { console.log('[pocket-tts] skip synth (already aborted)'); return null }
+    const id = nextId++
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { pending.delete(id); reject(new Error('pocket-tts synth timeout (120s)')) }, 120000)
+      const onAbort = () => { pending.delete(id); clearTimeout(timeout); resolve(null) }
+      signal?.addEventListener?.('abort', onAbort, { once: true })
+      pending.set(id, {
+        resolve: (obj) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); resolve(decodeAudio(obj)) },
+        reject: (err) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); reject(err) },
+      })
+      ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, streaming: false }) + '\n')
     })
-    ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, streaming: false }) + '\n')
   })
 }
 
-export async function synthesizeStream(text, refAudioPath, _refText, onChunk) {
+export async function synthesizeStream(text, refAudioPath, _refText, onChunk, signal) {
   if (!text) throw new Error('text required')
   if (typeof onChunk !== 'function') throw new Error('onChunk required for streaming')
   await startTtsProcess()
-  const id = nextId++
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { pending.delete(id); reject(new Error('pocket-tts stream timeout (120s)')) }, 120000)
-    pending.set(id, {
-      onChunk: (obj) => { const { audio, sampleRate } = decodeAudio(obj); onChunk(audio, sampleRate) },
-      resolveDone: (obj) => { clearTimeout(timeout); resolve({ sampleRate: obj.sample_rate || 24000 }) },
-      reject: (err) => { clearTimeout(timeout); reject(err) },
-      resolve: () => {},
+  return enqueue(() => {
+    if (signal?.aborted) { console.log('[pocket-tts] skip stream (already aborted)'); return { sampleRate: 24000, aborted: true } }
+    const id = nextId++
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { pending.delete(id); reject(new Error('pocket-tts stream timeout (120s)')) }, 120000)
+      const onAbort = () => { pending.delete(id); clearTimeout(timeout); resolve({ sampleRate: 24000, aborted: true }) }
+      signal?.addEventListener?.('abort', onAbort, { once: true })
+      pending.set(id, {
+        onChunk: (obj) => { if (signal?.aborted) return; const { audio, sampleRate } = decodeAudio(obj); onChunk(audio, sampleRate) },
+        resolveDone: (obj) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); resolve({ sampleRate: obj.sample_rate || 24000 }) },
+        reject: (err) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); reject(err) },
+        resolve: () => {},
+      })
+      ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, streaming: true }) + '\n')
     })
-    ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, streaming: true }) + '\n')
   })
 }
 

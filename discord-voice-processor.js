@@ -262,7 +262,7 @@ export async function processTranscript(rawText, confidence, userId, signal, use
           })
           emitChain = prevEmit
         }
-        await synthesizeStream(piece, refText ? voiceReferencePath : null, refText || null, onStreamChunk)
+        await synthesizeStream(piece, refText ? voiceReferencePath : null, refText || null, onStreamChunk, signal)
         console.log(`[pipe] ${tag} ✓ tts-stream ${Date.now()-tc}ms chunks=${collected.length} "${piece.slice(0,40)}"`)
       } catch (err) {
         console.error(`[pipe] ${tag} tts error:`, err.message)

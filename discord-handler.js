@@ -91,9 +91,21 @@ async function connectToVoiceChannel(guildId, channelId) {
   if (!discordClient) throw new Error('Discord bot not initialized')
   if (!isConnected) throw new Error('Discord bot not ready')
 
-  await forceClearBotVoiceState(guildId)
-
-  const { voiceConnection, voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId)
+  let voiceConnection, voiceReceiver
+  for (let outer = 1; outer <= 4; outer++) {
+    await forceClearBotVoiceState(guildId)
+    try {
+      ;({ voiceConnection, voiceReceiver } = await joinDiscordVoice(discordClient, guildId, channelId))
+      break
+    } catch (err) {
+      console.error(`[discord] join failed (outer=${outer}): ${err.message}`)
+      lastError.value = { message: err.message, timestamp: Date.now() }
+      if (outer === 4) throw err
+      const wait = 30000
+      console.log(`[discord] waiting ${wait}ms for ghost session to time out...`)
+      await new Promise(r => setTimeout(r, wait))
+    }
+  }
   currentChannelState = { guildId, channelId }
   voiceConnection.on('error', (err) => {
     console.error('[discord] voice connection error:', err?.message || err)
