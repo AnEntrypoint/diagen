@@ -161,6 +161,10 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
     console.log(`[pipe] ${tag} ✗ skip: empty transcript`)
     return null
   }
+  if (userText.startsWith('[') && userText.endsWith(']') && userText.indexOf(']') === userText.length - 1) {
+    console.log(`[pipe] ${tag} ✗ skip: whisper sentinel "${userText}"`)
+    return null
+  }
 
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
 
@@ -214,6 +218,10 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   if (signal?.aborted) return null
   if (!userText || userText.length < MIN_TRANSCRIPT_CHARS) {
     console.log(`[pipe] ${tag} ✗ skip: empty transcript`)
+    return null
+  }
+  if (userText.startsWith('[') && userText.endsWith(']') && userText.indexOf(']') === userText.length - 1) {
+    console.log(`[pipe] ${tag} ✗ skip: whisper sentinel "${userText}"`)
     return null
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }

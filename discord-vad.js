@@ -145,7 +145,7 @@ export function onPcmChunk(userId, stereoF32) {
 
   const rawRms = rms(raw)
   if (buf.gain === undefined) buf.gain = 1
-  if (rawRms > 0.001) {
+  if (rawRms > SILENCE_THRESHOLD_BASE) {
     const wantGain = Math.max(MIN_GAIN, Math.min(MAX_GAIN, TARGET_RMS / rawRms))
     buf.gain = buf.gain * (1 - GAIN_ATTACK) + wantGain * GAIN_ATTACK
   }
@@ -156,7 +156,7 @@ export function onPcmChunk(userId, stereoF32) {
     f32[i] = v > 1 ? 1 : v < -1 ? -1 : v
   }
 
-  const level = rms(f32)
+  const level = rawRms
   const effectiveThreshold = botSpeaking ? INTERRUPT_THRESHOLD : SILENCE_THRESHOLD_BASE
   const isSpeech = level > effectiveThreshold
 
