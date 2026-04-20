@@ -1,714 +1,217 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Diagen - Real-Time AI Avatar System</title>
-  <meta name="description" content="Diagen is an open-source real-time AI avatar system combining speech recognition, Qwen3.5 text generation, neural text-to-speech, and Audio2Face facial animation with VRM avatar rendering.">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>diagen // 247420 // an entrypoint</title>
+  <meta name="description" content="diagen. real-time ai voice bot. listen, think, speak, animate. built in public.">
+  <link rel="stylesheet" href="./design/colors_and_type.css">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--fg); }
 
-    :root {
-      --bg: #08080f;
-      --bg-card: #10101a;
-      --bg-card2: #14141f;
-      --border: #1e1e30;
-      --accent: #00d4aa;
-      --accent2: #7c5cfc;
-      --accent3: #f06292;
-      --text: #e0e0f0;
-      --muted: #666680;
-      --radius: 12px;
+    .dline {
+      position: sticky; top: 0; z-index: var(--z-header);
+      display: flex; align-items: baseline; gap: var(--space-4);
+      padding: var(--space-3) var(--space-5);
+      border-bottom: var(--bw-hair) solid var(--border);
+      background: color-mix(in oklab, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px);
+      font-family: var(--ff-mono); font-size: var(--fs-xs);
+      text-transform: uppercase; letter-spacing: var(--tr-label);
     }
+    .dline a { color: var(--fg); text-decoration: none; }
+    .dline a:hover { background: var(--fg); color: var(--bg); }
+    .dline .sep { flex: 1; border-bottom: var(--bw-hair) dotted var(--border); align-self: center; }
+    .dline nav { display: flex; gap: var(--space-4); flex-wrap: wrap; }
 
-    html { scroll-behavior: smooth; }
+    section { padding: var(--space-7) var(--space-5); border-bottom: var(--bw-hair) solid var(--border); }
+    section:last-of-type { border-bottom: 0; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
+    .hero { padding: var(--space-8) var(--space-5); }
+    .hero .tag { margin-bottom: var(--space-4); color: var(--fg); }
+    .hero .mark {
+      font-family: var(--ff-mono); font-weight: 500;
+      font-size: clamp(80px, 16vw, 200px);
+      line-height: .95; letter-spacing: -0.04em; margin: 0;
     }
+    .hero .pitch {
+      font-family: var(--ff-display);
+      font-size: clamp(28px, 4vw, 44px); line-height: 1.15; font-weight: 700;
+      letter-spacing: -0.02em; max-width: 24ch; margin: var(--space-5) 0 var(--space-6);
+    }
+    .hero .actions { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; }
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    .receipt { max-width: 720px; }
+    .receipt .r { display: flex; gap: var(--space-3); padding: var(--space-2) 0; align-items: baseline; }
+    .receipt .k { width: 160px; flex-shrink: 0; font-family: var(--ff-mono); font-size: var(--fs-tiny);
+      text-transform: uppercase; letter-spacing: var(--tr-label); color: var(--fg-3); }
+    .receipt .d { flex: 1; border-bottom: var(--bw-hair) dotted var(--border); align-self: center; }
+    .receipt .v { font-family: var(--ff-mono); font-size: var(--fs-sm); }
 
-    /* NAV */
-    nav {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      z-index: 100;
-      background: rgba(8,8,15,0.85);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 32px;
-      height: 60px;
-    }
-    .nav-logo {
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: -0.5px;
-    }
-    .nav-links {
-      display: flex;
-      gap: 28px;
-      list-style: none;
-    }
-    .nav-links a {
-      color: var(--muted);
-      font-size: 14px;
-      transition: color 0.2s;
-    }
-    .nav-links a:hover { color: var(--text); text-decoration: none; }
-
-    /* HERO */
-    .hero {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 120px 24px 80px;
-      position: relative;
-      overflow: hidden;
-    }
-    .hero::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background:
-        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(0,212,170,0.12) 0%, transparent 70%),
-        radial-gradient(ellipse 40% 30% at 80% 80%, rgba(124,92,252,0.10) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(0,212,170,0.1);
-      border: 1px solid rgba(0,212,170,0.3);
-      border-radius: 999px;
-      padding: 6px 16px;
-      font-size: 13px;
-      color: var(--accent);
-      margin-bottom: 32px;
-    }
-    .hero-badge::before {
-      content: '';
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      animation: pulse 2s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.8); }
-    }
-    h1 {
-      font-size: clamp(40px, 7vw, 80px);
-      font-weight: 800;
-      letter-spacing: -2px;
-      line-height: 1.05;
-      margin-bottom: 24px;
-      background: linear-gradient(135deg, #ffffff 30%, var(--accent) 70%, var(--accent2) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .hero p {
-      font-size: clamp(16px, 2.5vw, 20px);
-      color: var(--muted);
-      max-width: 640px;
-      margin: 0 auto 40px;
-    }
-    .hero-ctas {
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 28px;
-      border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      transition: all 0.2s;
-      text-decoration: none;
-    }
-    .btn-primary {
-      background: var(--accent);
-      color: #000;
-    }
-    .btn-primary:hover { background: #00bfa0; transform: translateY(-1px); text-decoration: none; }
-    .btn-secondary {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover { border-color: var(--muted); transform: translateY(-1px); text-decoration: none; }
-
-    /* PIPELINE */
-    .pipeline {
-      padding: 80px 24px;
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-    .section-label {
-      text-align: center;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 16px;
-    }
-    h2 {
-      text-align: center;
-      font-size: clamp(28px, 4vw, 44px);
-      font-weight: 700;
-      letter-spacing: -1px;
-      margin-bottom: 16px;
-    }
-    .section-sub {
-      text-align: center;
-      color: var(--muted);
-      font-size: 16px;
-      max-width: 560px;
-      margin: 0 auto 56px;
-    }
-    .pipeline-track {
-      display: flex;
-      align-items: stretch;
-      gap: 0;
-      overflow-x: auto;
-      padding-bottom: 8px;
-    }
-    .pipeline-step {
-      flex: 1;
-      min-width: 160px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px 20px;
-      position: relative;
-    }
-    .pipeline-step + .pipeline-step {
-      border-left: none;
-      border-radius: 0 var(--radius) var(--radius) 0;
-    }
-    .pipeline-step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-    .pipeline-arrow {
-      display: flex;
-      align-items: center;
-      padding: 0 4px;
-      color: var(--accent);
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-    .step-icon {
-      font-size: 28px;
-      margin-bottom: 12px;
-    }
-    .step-name {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--text);
-      margin-bottom: 6px;
-    }
-    .step-detail {
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-    .step-tag {
-      display: inline-block;
-      margin-top: 10px;
-      background: rgba(124,92,252,0.15);
-      border: 1px solid rgba(124,92,252,0.3);
-      border-radius: 4px;
-      padding: 2px 8px;
-      font-size: 11px;
-      color: var(--accent2);
+    .sec-label { margin-bottom: var(--space-4); }
+    .sec-title {
+      font-family: var(--ff-display); font-weight: 700;
+      font-size: var(--fs-h2); line-height: 1.1; letter-spacing: -0.02em;
+      max-width: 18ch; margin: 0 0 var(--space-5);
     }
 
-    /* FEATURES */
-    .features {
-      padding: 80px 24px;
-      max-width: 1100px;
-      margin: 0 auto;
+    .pipe {
+      display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+      border: var(--bw-hair) solid var(--border); border-radius: var(--r-3); overflow: hidden;
     }
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 20px;
+    .pipe .node {
+      padding: var(--space-4); border-right: var(--bw-hair) solid var(--border);
+      display: flex; flex-direction: column; gap: var(--space-2);
     }
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px;
-      transition: border-color 0.2s, transform 0.2s;
-    }
-    .feature-card:hover {
-      border-color: rgba(0,212,170,0.3);
-      transform: translateY(-2px);
-    }
-    .feature-icon {
-      width: 44px; height: 44px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      margin-bottom: 16px;
-    }
-    .fi-green { background: rgba(0,212,170,0.15); }
-    .fi-purple { background: rgba(124,92,252,0.15); }
-    .fi-pink { background: rgba(240,98,146,0.15); }
-    .fi-blue { background: rgba(33,150,243,0.15); }
-    .fi-orange { background: rgba(255,152,0,0.15); }
-    .fi-teal { background: rgba(0,188,212,0.15); }
-    .feature-card h3 {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .feature-card p {
-      font-size: 14px;
-      color: var(--muted);
-      line-height: 1.6;
+    .pipe .node:last-child { border-right: 0; }
+    .pipe .node .idx { font-family: var(--ff-mono); font-size: var(--fs-tiny); letter-spacing: var(--tr-label);
+      text-transform: uppercase; color: var(--mono-1); }
+    .pipe .node .name { font-family: var(--ff-mono); font-size: var(--fs-h4); font-weight: 600; }
+    .pipe .node .note { font-family: var(--ff-mono); font-size: var(--fs-xs); color: var(--fg-3); }
+    @media (max-width: 820px) {
+      .pipe { grid-template-columns: 1fr; }
+      .pipe .node { border-right: 0; border-bottom: var(--bw-hair) solid var(--border); }
+      .pipe .node:last-child { border-bottom: 0; }
     }
 
-    /* TECH STACK */
-    .stack {
-      padding: 80px 24px;
-      background: var(--bg-card);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .stack-inner {
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-    .stack-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-    }
-    .stack-item {
-      background: var(--bg-card2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-    .stack-item-icon {
-      font-size: 24px;
-      flex-shrink: 0;
-    }
-    .stack-item-info { min-width: 0; }
-    .stack-item-name {
-      font-size: 14px;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .stack-item-desc {
-      font-size: 12px;
-      color: var(--muted);
-    }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
+      border: var(--bw-hair) solid var(--border); border-radius: var(--r-3); overflow: hidden; }
+    .feat { padding: var(--space-5); border-right: var(--bw-hair) solid var(--border); border-bottom: var(--bw-hair) solid var(--border); }
+    .feat .t { font-family: var(--ff-mono); font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: var(--tr-label); color: var(--mono-2); margin-bottom: var(--space-2); }
+    .feat .h { font-family: var(--ff-display); font-size: var(--fs-h4); font-weight: 600; margin: 0 0 var(--space-2); }
+    .feat .p { font-family: var(--ff-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--fg-2); }
 
-    /* QUICKSTART */
-    .quickstart {
-      padding: 80px 24px;
-      max-width: 860px;
-      margin: 0 auto;
-    }
-    .code-block {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      margin-bottom: 20px;
-    }
-    .code-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .code-dots {
-      display: flex;
-      gap: 6px;
-    }
-    .code-dots span {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-    }
-    .dot-r { background: #ff5f57; }
-    .dot-y { background: #febc2e; }
-    .dot-g { background: #28c840; }
-    pre {
-      padding: 20px;
-      font-size: 13px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
-      overflow-x: auto;
-      line-height: 1.7;
-    }
-    .c-comment { color: #555570; }
-    .c-cmd { color: var(--accent); }
-    .c-str { color: #a8d8a8; }
-    .c-kw { color: var(--accent2); }
+    .stack-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: var(--space-3); }
+    .stack-item { padding: var(--space-3) var(--space-4); border: var(--bw-hair) solid var(--border); border-radius: var(--r-2);
+      font-family: var(--ff-mono); font-size: var(--fs-sm); display: flex; flex-direction: column; gap: var(--space-1); }
+    .stack-item .role { color: var(--fg-3); font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: var(--tr-label); }
+    .stack-item .tool { color: var(--fg); font-weight: 600; }
 
-    /* CTA FOOTER */
-    .cta-section {
-      padding: 80px 24px;
-      text-align: center;
-      position: relative;
-      overflow: hidden;
+    pre.install {
+      font-family: var(--ff-mono); font-size: var(--fs-sm); line-height: 1.6;
+      background: var(--bg-2); color: var(--fg);
+      border: var(--bw-hair) solid var(--border); border-radius: var(--r-2);
+      padding: var(--space-4); overflow-x: auto; margin: 0;
     }
-    .cta-section::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(ellipse 50% 60% at 50% 100%, rgba(0,212,170,0.08) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    .cta-section h2 { margin-bottom: 16px; }
-    .cta-section p { color: var(--muted); margin-bottom: 36px; font-size: 16px; }
+    pre.install .c { color: var(--fg-3); font-style: italic; }
+    pre.install .k { color: var(--mono-1); }
 
-    /* FOOTER */
     footer {
-      border-top: 1px solid var(--border);
-      padding: 32px 24px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 13px;
+      display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+      padding: var(--space-5);
+      font-family: var(--ff-mono); font-size: var(--fs-micro);
+      text-transform: uppercase; letter-spacing: var(--tr-label); color: var(--fg-3);
+      border-top: var(--bw-hair) solid var(--border);
     }
-    footer a { color: var(--muted); }
-    footer a:hover { color: var(--text); }
+    footer a { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--fg); }
 
-    /* LIVE DEMO */
-    .demo-section {
-      padding: 80px 24px;
-      max-width: 860px;
-      margin: 0 auto;
-      text-align: center;
-    }
-    .demo-card {
-      background: var(--bg-card);
-      border: 1px solid rgba(0,212,170,0.25);
-      border-radius: var(--radius);
-      padding: 48px 40px;
-      position: relative;
-      overflow: hidden;
-    }
-    .demo-card::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(0,212,170,0.07) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    .demo-card h2 { margin-bottom: 16px; }
-    .demo-card p { color: var(--muted); font-size: 16px; max-width: 560px; margin: 0 auto 32px; }
-    .demo-chips {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: center;
-      margin-bottom: 32px;
-    }
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(124,92,252,0.12);
-      border: 1px solid rgba(124,92,252,0.25);
-      border-radius: 999px;
-      padding: 5px 14px;
-      font-size: 12px;
-      color: var(--accent2);
-    }
-
-    @media (max-width: 640px) {
-      nav { padding: 0 16px; }
-      .nav-links { display: none; }
-      .pipeline-track { flex-direction: column; }
-      .pipeline-step { border-radius: var(--radius) !important; border-left: 1px solid var(--border) !important; }
-      .pipeline-arrow { transform: rotate(90deg); align-self: center; }
-      .demo-card { padding: 32px 20px; }
-    }
+    .prose-lead { font-family: var(--ff-display); font-size: var(--fs-h3); line-height: 1.25; max-width: 30ch; font-weight: 500; margin: 0 0 var(--space-5); }
   </style>
 </head>
 <body>
 
-<nav>
-  <span class="nav-logo">diagen</span>
-  <ul class="nav-links">
-    <li><a href="#pipeline">Pipeline</a></li>
-    <li><a href="#features">Features</a></li>
-    <li><a href="#stack">Stack</a></li>
-    <li><a href="#quickstart">Quickstart</a></li>
-    <li><a href="./demo/" style="color:var(--accent);font-weight:600;">Live Demo</a></li>
-    <li><a href="https://github.com/AnEntrypoint/diagen">GitHub</a></li>
-  </ul>
-</nav>
+  <header class="dline">
+    <a href="/" class="mono-green"><strong>// diagen</strong></a>
+    <span>v0.1.x · probably emerging 🌀</span>
+    <span class="sep"></span>
+    <nav>
+      <a href="#pipeline">pipeline</a>
+      <a href="#features">features</a>
+      <a href="#stack">stack</a>
+      <a href="#quickstart">quickstart</a>
+      <a href="./demo/">demo ↗</a>
+      <a href="https://github.com/AnEntrypoint/diagen">source ↗</a>
+    </nav>
+  </header>
 
-<section class="hero">
-  <div class="hero-badge">Open Source &middot; Real-Time AI Avatar</div>
-  <h1>Talk to an Avatar.<br>Powered by AI.</h1>
-  <p>Diagen is a real-time AI avatar system that combines speech recognition, Qwen3.5 text generation, neural TTS, and Audio2Face facial animation&mdash;rendered live in a VRM avatar.</p>
-  <div class="hero-ctas">
-    <a href="./demo/" class="btn btn-primary">
-      Try Live Demo
-    </a>
-    <a href="https://github.com/AnEntrypoint/diagen" class="btn btn-secondary">
-      View on GitHub
-    </a>
-    <a href="#quickstart" class="btn btn-secondary">
-      Get Started
-    </a>
-  </div>
-</section>
+  <section class="hero">
+    <div class="t-label tag">// project · live · v0.1.x</div>
+    <h1 class="mark">diagen</h1>
+    <p class="pitch">real-time voice bot. it hears you, thinks, talks back, moves its face. that's the whole pitch.</p>
+    <div class="actions">
+      <a href="./demo/" class="btn-stamp green">try the demo →</a>
+      <a href="https://github.com/AnEntrypoint/diagen" class="btn">read the source</a>
+      <a href="#quickstart" class="btn-ghost">or: clone and run it</a>
+    </div>
+  </section>
 
-<section class="demo-section" id="demo">
-  <div class="demo-card">
-    <h2>Live Demo &mdash; Qwen3.5 Voice Chat</h2>
-    <p>Run Qwen3.5-0.8B entirely in your browser. No server required. Uses WebGPU for fast inference, falls back to WASM automatically.</p>
-    <div class="demo-chips">
-      <span class="chip">&#129504; Qwen3.5-0.8B</span>
-      <span class="chip">&#9889; WebGPU / WASM</span>
-      <span class="chip">&#127908; Voice Input</span>
-      <span class="chip">&#128266; Speech Output</span>
-      <span class="chip">&#128274; Runs Locally</span>
+  <section>
+    <div class="t-label sec-label mono-purple">// receipt</div>
+    <div class="receipt">
+      <div class="r"><span class="k">status</span><span class="d"></span><span class="v mono-green">live · works on our laptop</span></div>
+      <div class="r"><span class="k">stt</span><span class="d"></span><span class="v">whisper · on-device</span></div>
+      <div class="r"><span class="k">llm</span><span class="d"></span><span class="v">llama3.2-1b · qwen3.5-0.8b · cuda</span></div>
+      <div class="r"><span class="k">tts</span><span class="d"></span><span class="v">omnivoice · pocket-tts wasm</span></div>
+      <div class="r"><span class="k">face</span><span class="d"></span><span class="v">audio2face + vrm 0.0/1.0</span></div>
+      <div class="r"><span class="k">ships</span><span class="d"></span><span class="v">offline · buildless · lfs-distributed</span></div>
+      <div class="r"><span class="k">license</span><span class="d"></span><span class="v">mit</span></div>
+      <div class="r"><span class="k">first commit</span><span class="d"></span><span class="v">2025</span></div>
     </div>
-    <a href="./demo/" class="btn btn-primary">Open Voice Chat Demo &rarr;</a>
-  </div>
-</section>
+  </section>
 
-<section class="pipeline" id="pipeline">
-  <p class="section-label">End-to-End Pipeline</p>
-  <h2>From voice to animated face</h2>
-  <p class="section-sub">Every component in the pipeline runs in real-time, connected through a lightweight Node.js server.</p>
+  <section id="pipeline">
+    <div class="t-label sec-label mono-mascot">// pipeline</div>
+    <h2 class="sec-title">voice in. voice out. one loop.</h2>
+    <p class="prose-lead">the mic hears you. whisper reads the words. llama writes a reply. omnivoice speaks it. audio2face moves the mouth. takes about a second end-to-end on a warm gpu.</p>
+    <div class="pipe">
+      <div class="node"><span class="idx">01 · in</span><span class="name">mic</span><span class="note">48k stereo · discord or browser</span></div>
+      <div class="node"><span class="idx">02 · stt</span><span class="name">whisper</span><span class="note">on-device · base/tiny</span></div>
+      <div class="node"><span class="idx">03 · llm</span><span class="name">llama.cpp</span><span class="note">gguf · cuda · streaming</span></div>
+      <div class="node"><span class="idx">04 · tts</span><span class="name">omnivoice</span><span class="note">24k · voice clone · cuda</span></div>
+      <div class="node"><span class="idx">05 · out</span><span class="name">a2f + vrm</span><span class="note">visemes · blendshapes · face</span></div>
+    </div>
+  </section>
 
-  <div class="pipeline-track">
-    <div class="pipeline-step">
-      <div class="step-icon">&#127908;</div>
-      <div class="step-name">Speech Input</div>
-      <div class="step-detail">Browser microphone captured via Web Audio API</div>
-      <span class="step-tag">STT</span>
+  <section id="features">
+    <div class="t-label sec-label mono-sun">// features</div>
+    <h2 class="sec-title">one system. every moving part.</h2>
+    <div class="features">
+      <div class="feat"><div class="t">speech-to-text</div><div class="h">whisper, on your hardware</div><div class="p">openai whisper via transformers.js. no api call. model cached locally. latency scales with the model you pick.</div></div>
+      <div class="feat"><div class="t">text generation</div><div class="h">llama.cpp in-process</div><div class="p">no ollama server. node-llama-cpp loads a gguf straight into the diagen process. cuda if you have it.</div></div>
+      <div class="feat"><div class="t">text-to-speech</div><div class="h">omnivoice + pocket-tts</div><div class="p">server side: omnivoice, with voice cloning from a wav reference. browser side: pocket-tts compiled to wasm.</div></div>
+      <div class="feat"><div class="t">facial animation</div><div class="h">audio2face, self-hosted</div><div class="p">audio → blendshapes. no cloud. the vrm mouth moves with the speech without a special mesh.</div></div>
+      <div class="feat"><div class="t">avatar</div><div class="h">vrm 0.0 and 1.0</div><div class="p">drop any vrm in. cleetus ships with the repo. the mouth, eyes, brows all route through the blendshape table.</div></div>
+      <div class="feat"><div class="t">distribution</div><div class="h">git lfs for the weights</div><div class="p">clone the repo, run <code>git lfs pull</code>, everything's there. no curl, no huggingface cli, no hunting.</div></div>
     </div>
-    <div class="pipeline-arrow">&#8594;</div>
-    <div class="pipeline-step">
-      <div class="step-icon">&#129302;</div>
-      <div class="step-name">Qwen3.5 Dialog</div>
-      <div class="step-detail">Qwen3.5-0.8B ONNX model generates conversational responses on-device</div>
-      <span class="step-tag">LLM</span>
-    </div>
-    <div class="pipeline-arrow">&#8594;</div>
-    <div class="pipeline-step">
-      <div class="step-icon">&#128266;</div>
-      <div class="step-name">Neural TTS</div>
-      <div class="step-detail">Webtalk synthesizes natural speech audio from the generated text</div>
-      <span class="step-tag">TTS</span>
-    </div>
-    <div class="pipeline-arrow">&#8594;</div>
-    <div class="pipeline-step">
-      <div class="step-icon">&#128084;</div>
-      <div class="step-name">Audio2Face</div>
-      <div class="step-detail">ONNX neural model drives 52 ARKit blendshape weights from audio frames</div>
-      <span class="step-tag">A2F</span>
-    </div>
-    <div class="pipeline-arrow">&#8594;</div>
-    <div class="pipeline-step">
-      <div class="step-icon">&#127775;</div>
-      <div class="step-name">VRM Avatar</div>
-      <div class="step-detail">Three.js + @pixiv/three-vrm renders the animated avatar at 30 fps in browser</div>
-      <span class="step-tag">WebGL</span>
-    </div>
-  </div>
-</section>
+  </section>
 
-<section class="features" id="features">
-  <p class="section-label">Features</p>
-  <h2>Everything in one system</h2>
-  <p class="section-sub">Diagen wires together best-in-class open models into a single runnable application.</p>
-
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon fi-green">&#127908;</div>
-      <h3>Speech-to-Text</h3>
-      <p>Browser-native STT integration captures and transcribes voice input with low latency, streaming results to the dialog pipeline.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon fi-purple">&#129302;</div>
-      <h3>Qwen3.5 Text Generation</h3>
-      <p>Runs Qwen3.5-0.8B quantized ONNX model locally via onnxruntime-node&mdash;no cloud API required. Conversational context is maintained across turns.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon fi-teal">&#128266;</div>
-      <h3>Neural Text-to-Speech</h3>
-      <p>Webtalk generates expressive speech audio on the server, supporting voice cloning via a reference WAV embedding.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon fi-pink">&#128084;</div>
-      <h3>Audio2Face Animation</h3>
-      <p>The audio2afan ONNX model maps audio frames to 52 ARKit blendshape weights, producing lip-sync and facial expression data in real-time.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon fi-blue">&#127775;</div>
-      <h3>VRM 0.0 &amp; 1.0 Avatars</h3>
-      <p>Automatic VRM version detection with expression mapping. Load any compatible VRM avatar model and it will animate with the full blendshape set.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon fi-orange">&#9889;</div>
-      <h3>Git LFS Model Distribution</h3>
-      <p>All AI model weights ship in-repo via Git LFS. <code>git lfs pull</code> after clone fetches every required file (~2 GB).</p>
-    </div>
-  </div>
-</section>
-
-<section class="stack" id="stack">
-  <div class="stack-inner">
-    <p class="section-label">Tech Stack</p>
-    <h2>Built on open tools</h2>
-    <p class="section-sub">No proprietary cloud dependencies. Everything runs locally.</p>
+  <section id="stack">
+    <div class="t-label sec-label mono-sky">// stack</div>
+    <h2 class="sec-title">what it's made of</h2>
     <div class="stack-grid">
-      <div class="stack-item">
-        <div class="stack-item-icon">&#127744;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">Node.js + Express</div>
-          <div class="stack-item-desc">Lightweight HTTP server, zero build step</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#129504;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">Qwen3.5-0.8B ONNX</div>
-          <div class="stack-item-desc">On-device LLM inference</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#128084;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">audio2afan</div>
-          <div class="stack-item-desc">Neural Audio2Face blendshapes</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#128266;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">webtalk</div>
-          <div class="stack-item-desc">ONNX neural TTS with voice cloning</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#127775;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">Three.js + VRM</div>
-          <div class="stack-item-desc">WebGL avatar rendering at 30 fps</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#128230;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">onnxruntime-node</div>
-          <div class="stack-item-desc">High-performance ONNX inference</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#127760;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">Git LFS</div>
-          <div class="stack-item-desc">In-repo model weight distribution</div>
-        </div>
-      </div>
-      <div class="stack-item">
-        <div class="stack-item-icon">&#128203;</div>
-        <div class="stack-item-info">
-          <div class="stack-item-name">SentencePiece</div>
-          <div class="stack-item-desc">Tokenization for Qwen3.5 models</div>
-        </div>
-      </div>
+      <div class="stack-item"><span class="role">runtime</span><span class="tool">node · bun</span></div>
+      <div class="stack-item"><span class="role">stt</span><span class="tool">xenova whisper</span></div>
+      <div class="stack-item"><span class="role">llm</span><span class="tool">node-llama-cpp</span></div>
+      <div class="stack-item"><span class="role">tts (server)</span><span class="tool">omnivoice</span></div>
+      <div class="stack-item"><span class="role">tts (browser)</span><span class="tool">pocket-tts wasm</span></div>
+      <div class="stack-item"><span class="role">audio2face</span><span class="tool">onnx runtime</span></div>
+      <div class="stack-item"><span class="role">avatar</span><span class="tool">three + pixiv/three-vrm</span></div>
+      <div class="stack-item"><span class="role">voice i/o</span><span class="tool">discord.js + dispipe</span></div>
+      <div class="stack-item"><span class="role">ui</span><span class="tool">webjsx · ripple-ui</span></div>
     </div>
-  </div>
-</section>
+  </section>
 
-<section class="quickstart" id="quickstart">
-  <p class="section-label">Quickstart</p>
-  <h2>Run in minutes</h2>
-  <p class="section-sub">Clone the repo, download the models, and start the server.</p>
+  <section id="quickstart">
+    <div class="t-label sec-label mono-flame">// quickstart</div>
+    <h2 class="sec-title">clone and run it</h2>
+    <p class="prose-lead">weights live in git lfs. first pull is ~2gb. after that it's just <code>npm start</code>.</p>
+<pre class="install"><span class="c"># clone and fetch weights</span>
+<span class="k">git clone</span> https://github.com/AnEntrypoint/diagen
+<span class="k">cd</span> diagen
+<span class="k">git lfs pull</span>
 
-  <div class="code-block">
-    <div class="code-header">
-      <div class="code-dots">
-        <span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span>
-      </div>
-      <span>Terminal</span>
-    </div>
-    <pre><span class="c-comment"># 1. Clone the repository (with LFS)</span>
-<span class="c-cmd">git lfs install</span>
-<span class="c-cmd">git clone</span> <span class="c-str">https://github.com/AnEntrypoint/diagen.git</span>
-<span class="c-cmd">cd</span> diagen
-<span class="c-cmd">git lfs pull</span>
+<span class="c"># optional: discord bot</span>
+<span class="k">echo</span> "DISCORD_TOKEN=your-token-here" &gt; .env
 
-<span class="c-comment"># 2. Install dependencies</span>
-<span class="c-cmd">npm install</span>
+<span class="c"># install and start</span>
+<span class="k">npm install</span>
+<span class="k">npm start</span></pre>
+  </section>
 
-<span class="c-comment"># 3. Start the server</span>
-<span class="c-cmd">npm start</span>
-
-<span class="c-comment"># Open http://localhost:8080 in your browser</span></pre>
-  </div>
-
-  <div class="code-block">
-    <div class="code-header">
-      <div class="code-dots">
-        <span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span>
-      </div>
-      <span>Optional: Voice Cloning</span>
-    </div>
-    <pre><span class="c-comment"># Place a reference WAV file to clone a voice</span>
-<span class="c-comment"># The server will encode it as a speaker embedding on startup</span>
-<span class="c-cmd">cp</span> <span class="c-str">your-voice.wav</span> cleetus.wav</pre>
-  </div>
-</section>
-
-<section class="cta-section">
-  <h2>Start building today</h2>
-  <p>Diagen is open source and free to use. Contributions welcome.</p>
-  <div class="hero-ctas">
-    <a href="https://github.com/AnEntrypoint/diagen" class="btn btn-primary">View Source on GitHub</a>
-    <a href="https://github.com/AnEntrypoint/diagen/issues" class="btn btn-secondary">Open an Issue</a>
-  </div>
-</section>
-
-<footer>
-  <p>
-    <a href="https://github.com/AnEntrypoint/diagen">AnEntrypoint/diagen</a>
-    &nbsp;&middot;&nbsp;
-    MIT License
-    &nbsp;&middot;&nbsp;
-    Built with open-source AI models
-  </p>
-</footer>
+  <footer>
+    <span>247420 / mmxxvi · <a href="https://github.com/AnEntrypoint">anentrypoint</a> · <a href="https://github.com/AnEntrypoint/diagen">source</a></span>
+    <span>no cookies · no analytics · no gradients · probably emerging 🌀</span>
+  </footer>
 
 </body>
 </html>
