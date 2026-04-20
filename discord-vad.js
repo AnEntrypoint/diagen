@@ -14,7 +14,7 @@ const SAMPLE_RATE = 48000
 const BOT_SPEAK_TAIL_MS = 250
 const PREROLL_MS = 500
 const PREROLL_SAMPLES = SAMPLE_RATE * PREROLL_MS / 1000
-const MIN_PEAK_RMS = 0.008
+const MIN_PEAK_RMS = 0.020
 
 const userBuffers = new Map()
 let _processingQueue = null
@@ -143,13 +143,6 @@ export function onPcmChunk(userId, stereoF32) {
   const isSpeech = level > effectiveThreshold
 
   pushFrame(userId, f32)
-
-  if (buf.processing) {
-    if (isSpeech && level > INTERRUPT_THRESHOLD) {
-      console.log(`[vad] 🗣️ uid=${userId} speaking while processing rms=${level.toFixed(4)} (bot=${botSpeaking})`)
-    }
-    return
-  }
 
   buf.preroll.push(f32)
   buf.prerollSamples += f32.length
