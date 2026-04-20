@@ -241,8 +241,10 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   let firstAudioAt = null
   let stopRequested = false
 
+  const stripSpoken = (s) => s.replace(/^[\s"'`“”‘’]+|[\s"'`“”‘’]+$/g, '')
+
   const flushSentence = (sent) => {
-    const piece = sent.trim()
+    const piece = stripSpoken(sent)
     if (!piece) return
     responseText += (responseText ? ' ' : '') + piece
     const tc = Date.now()

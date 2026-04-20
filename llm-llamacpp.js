@@ -73,6 +73,10 @@ const GEN_OPTS = { temperature: 0.9, topP: 0.92, maxTokens: 300, repeatPenalty: 
 export async function generate(prompt, system = 'You are a helpful assistant. Be concise.', signal) {
   const t0 = Date.now()
   const { session, release } = await acquireSession(system)
+  let released = false
+  const doRelease = () => { if (!released) { released = true; release() } }
+  const onAbort = () => { console.log('[llamacpp] abort → early release'); doRelease() }
+  signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
     const out = await session.prompt(prompt, { ...GEN_OPTS, signal })
     console.log(`[llamacpp] gen ${Date.now()-t0}ms chars=${out.length}`)
@@ -82,12 +86,17 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
     console.error(`[llamacpp] error after ${Date.now()-t0}ms:`, err.message)
     throw err
   } finally {
-    release()
+    signal?.removeEventListener?.('abort', onAbort)
+    doRelease()
   }
 }
 
 export async function* generateTokens(prompt, system = 'You are a helpful assistant. Be concise.', signal) {
   const { session, release } = await acquireSession(system)
+  let released = false
+  const doRelease = () => { if (!released) { released = true; release() } }
+  const onAbort = () => { console.log('[llamacpp] abort → early release'); doRelease() }
+  signal?.addEventListener?.('abort', onAbort, { once: true })
   const queue = []
   let resolveNext = null
   let done = false
@@ -109,7 +118,8 @@ export async function* generateTokens(prompt, system = 'You are a helpful assist
     }
     await promptPromise
   } finally {
-    release()
+    signal?.removeEventListener?.('abort', onAbort)
+    doRelease()
   }
 }
 
