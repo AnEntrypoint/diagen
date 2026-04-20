@@ -33,7 +33,16 @@ function isSentinel(text) {
   if (!text) return true
   const t = text.trim()
   if (t.length === 0) return true
-  return t.charAt(0) === '[' && t.charAt(t.length - 1) === ']' && t.indexOf(']') === t.length - 1
+  let i = 0
+  while (i < t.length) {
+    while (i < t.length && t.charAt(i) === ' ') i++
+    if (i >= t.length) break
+    if (t.charAt(i) !== '[') return false
+    const end = t.indexOf(']', i)
+    if (end < 0) return false
+    i = end + 1
+  }
+  return true
 }
 
 function wordCount(text) {

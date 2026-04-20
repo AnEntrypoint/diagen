@@ -61,7 +61,7 @@ export async function transcribe(pcmBuffer, sampleRate = 48000) {
       stride_length_s: 5,
       language: 'english',
       task: 'transcribe',
-      no_speech_threshold: 0.3,
+      no_speech_threshold: 0.2,
       condition_on_previous_text: false,
       initial_prompt: 'Cleetus, the gas station owner, talking with customers.',
     })

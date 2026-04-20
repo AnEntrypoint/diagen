@@ -7,11 +7,11 @@ const SAMPLE_RATE = 48000
 const INTERRUPT_THRESHOLD = 0.05
 const INTERRUPT_SUSTAIN_MS = 250
 const BOT_SPEAK_TAIL_MS = 250
-const TARGET_RMS = 0.08
-const MAX_GAIN = 15
+const TARGET_RMS = 0.15
+const MAX_GAIN = 25
 const MIN_GAIN = 1
-const GAIN_ATTACK = 0.15
-const GAIN_MIN_RMS = 0.004
+const GAIN_ATTACK = 0.25
+const GAIN_MIN_RMS = 0.003
 
 const userBuffers = new Map()
 let _processingQueue = null
