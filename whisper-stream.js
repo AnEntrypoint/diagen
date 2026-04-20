@@ -1,25 +1,10 @@
 import { transcribe } from './discord-whisper.js'
-import fs from 'fs'
-import path from 'path'
-import { encodeWAV } from './server-utils.mjs'
 
 const SAMPLE_RATE = 48000
-const DEBOUNCE_MS = 400
-const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.4
-const DEBUG_DUMP = process.env.DEBUG_DUMP_AUDIO === '1'
-const DEBUG_DUMP_DIR = path.join('logs', 'debug-audio')
-const DEBUG_DUMP_KEEP = Number(process.env.DEBUG_DUMP_KEEP || 20)
-
-function rotateDumps() {
-  try {
-    if (!fs.existsSync(DEBUG_DUMP_DIR)) return
-    const files = fs.readdirSync(DEBUG_DUMP_DIR)
-      .filter(f => f.endsWith('.wav'))
-      .map(f => ({ f, m: fs.statSync(path.join(DEBUG_DUMP_DIR, f)).mtimeMs }))
-      .sort((a,b) => b.m - a.m)
-    for (const { f } of files.slice(DEBUG_DUMP_KEEP)) fs.unlinkSync(path.join(DEBUG_DUMP_DIR, f))
-  } catch {}
-}
+const DEBOUNCE_MS = 300
+const MIN_RETRANSCRIBE_SAMPLES = SAMPLE_RATE * 0.3
+const STABILITY_MS = 650
+const MIN_WORDS_TO_FIRE = 1
 
 const sessions = new Map()
 
@@ -34,9 +19,50 @@ function getSession(userId) {
       latestText: '',
       latestConf: 0,
       listeners: [],
+      stableListeners: [],
+      stableText: '',
+      stableSince: 0,
+      lastFiredText: '',
+      stabilityTimer: null,
     })
   }
   return sessions.get(userId)
+}
+
+function isSentinel(text) {
+  if (!text) return true
+  const t = text.trim()
+  if (t.length === 0) return true
+  return t.charAt(0) === '[' && t.charAt(t.length - 1) === ']' && t.indexOf(']') === t.length - 1
+}
+
+function wordCount(text) {
+  return text.trim().split(/\s+/).filter(Boolean).length
+}
+
+function scheduleStabilityCheck(userId) {
+  const s = sessions.get(userId)
+  if (!s) return
+  if (s.stabilityTimer) clearTimeout(s.stabilityTimer)
+  const remain = Math.max(50, STABILITY_MS - (Date.now() - s.stableSince))
+  s.stabilityTimer = setTimeout(() => fireIfStable(userId), remain)
+}
+
+function fireIfStable(userId) {
+  const s = sessions.get(userId)
+  if (!s) return
+  s.stabilityTimer = null
+  const text = s.latestText
+  if (isSentinel(text)) return
+  if (text !== s.stableText) return
+  if (Date.now() - s.stableSince < STABILITY_MS) { scheduleStabilityCheck(userId); return }
+  if (wordCount(text) < MIN_WORDS_TO_FIRE) return
+  if (text === s.lastFiredText) return
+  s.lastFiredText = text
+  const conf = s.latestConf
+  console.log(`[stream] uid=${userId} ⚡ stable "${text.slice(0,80)}" conf=${conf.toFixed(2)} — firing`)
+  clear(userId)
+  for (const fn of s.stableListeners) try { fn(text, conf) } catch (e) { console.error('[stream] stable listener err:', e.message) }
 }
 
 export function pushFrame(userId, f32Frame) {
@@ -80,6 +106,13 @@ async function maybeRetranscribe(userId) {
     s.lastTranscribeAt = Date.now()
     s.lastTranscribeSamples = snapshotSamples
     console.log(`[stream] uid=${userId} streaming STT ${Date.now()-t0}ms samples=${snapshotSamples} → "${text.slice(0,60)}"`)
+    if (text !== s.stableText) {
+      s.stableText = text
+      s.stableSince = Date.now()
+    }
+    if (!isSentinel(text) && wordCount(text) >= MIN_WORDS_TO_FIRE) {
+      scheduleStabilityCheck(userId)
+    }
     for (const fn of s.listeners) try { fn(text, result.confidence, prev) } catch {}
   } catch (err) {
     console.error(`[stream] uid=${userId} transcribe error:`, err.message)
@@ -95,44 +128,6 @@ export function getLatest(userId) {
   return { text: s.latestText, confidence: s.latestConf, samples: s.totalSamples }
 }
 
-export async function finalizeAndClear(userId) {
-  const s = sessions.get(userId)
-  if (!s) return { text: '', confidence: 0 }
-  if (s.chunks.length === 0) return { text: s.latestText, confidence: s.latestConf }
-  const totalSamples = s.totalSamples
-  const untranscribedSamples = totalSamples - s.lastTranscribeSamples
-  if (s.latestText && untranscribedSamples < SAMPLE_RATE * 0.3) {
-    const out = { text: s.latestText, confidence: s.latestConf }
-    console.log(`[stream] uid=${userId} finalize-skip (streaming covers ${(totalSamples/SAMPLE_RATE).toFixed(2)}s, tail=${(untranscribedSamples/SAMPLE_RATE).toFixed(2)}s) → "${out.text.slice(0,60)}"`)
-    clear(userId)
-    return out
-  }
-  const pcmBuffer = chunksToPcmBuffer(s.chunks)
-  const dumpChunks = s.chunks.slice()
-  clear(userId)
-  try {
-    const result = await transcribe(pcmBuffer, SAMPLE_RATE)
-    const text = (result.text || '').trim()
-    if (DEBUG_DUMP) try {
-      fs.mkdirSync(DEBUG_DUMP_DIR, { recursive: true })
-      const total = dumpChunks.reduce((a,c) => a + c.length, 0)
-      const merged = new Float32Array(total)
-      let off = 0
-      for (const c of dumpChunks) { merged.set(c, off); off += c.length }
-      const wav = encodeWAV(merged, SAMPLE_RATE)
-      const out = path.join(DEBUG_DUMP_DIR, `${userId}-${Date.now()}.wav`)
-      fs.writeFileSync(out, wav)
-      rotateDumps()
-      console.log(`[stream] uid=${userId} 🎧 dumped ${out} (${(wav.length/1024).toFixed(1)}KB)`)
-    } catch (e) { console.error('[stream] dump fail:', e.message) }
-    console.log(`[stream] uid=${userId} finalize samples=${totalSamples} → "${text.slice(0,80)}"`)
-    return { text, confidence: result.confidence }
-  } catch (err) {
-    console.error(`[stream] uid=${userId} finalize error:`, err.message)
-    return { text: s.latestText, confidence: s.latestConf }
-  }
-}
-
 export function clear(userId) {
   const s = sessions.get(userId)
   if (!s) return
@@ -141,9 +136,17 @@ export function clear(userId) {
   s.lastTranscribeSamples = 0
   s.latestText = ''
   s.latestConf = 0
+  s.stableText = ''
+  s.stableSince = 0
+  if (s.stabilityTimer) { clearTimeout(s.stabilityTimer); s.stabilityTimer = null }
 }
 
 export function onPartial(userId, fn) {
   const s = getSession(userId)
   s.listeners.push(fn)
+}
+
+export function onStable(userId, fn) {
+  const s = getSession(userId)
+  s.stableListeners.push(fn)
 }
