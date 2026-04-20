@@ -7,14 +7,6 @@ import fs from 'fs'
 const SAMPLE_RATE_DISCORD = 48000
 const SAMPLE_RATE_TTS_FALLBACK = 24000
 const MIN_TRANSCRIPT_CHARS = 2
-const NON_SPEECH_RE = /^[\s\[\(\*_`]*(BLANK_AUDIO|no speech detected|laughter|laughs|chuckles|chuckle|music|applause|silence|inaudible|background noise|coughs?|sighs?|breathing|breath|clears throat)[\s\]\)\*_`\.,!\?-]*$/i
-
-function isNonSpeech(text) {
-  if (!text) return true
-  const stripped = text.replace(/[\[\(].*?[\]\)]/g, '').replace(/\*.*?\*/g, '').trim()
-  if (stripped.length < MIN_TRANSCRIPT_CHARS) return true
-  return NON_SPEECH_RE.test(text.trim())
-}
 
 let voiceReferencePath = null
 let voiceReferenceText = null
@@ -38,7 +30,7 @@ export function noteBotInterrupted() {
   if (!_currentSpeech) return null
   const elapsed = Date.now() - _currentSpeech.startedAt
   const spokenFraction = Math.max(0, Math.min(1, elapsed / _currentSpeech.durationMs))
-  const words = _currentSpeech.text.split(/\s+/).filter(Boolean)
+  const words = _currentSpeech.text.split(' ').filter(Boolean)
   const spokenWords = Math.floor(words.length * spokenFraction)
   const unsaid = words.slice(spokenWords).join(' ').trim()
   _currentSpeech = null
@@ -88,8 +80,21 @@ export function setCharacterCard(card) {
   const name = d.name || 'the character'
   characterName = name
   const essence = [d.description, d.personality].filter(Boolean).join(' ')
-  const scene = d.scenario ? ` Setting: ${d.scenario}` : ''
-  characterSystemPrompt = `You are generating the next line in a live voice-chat log. The person speaking is ${name}. ${essence}\n\nEach log line is: name, colon, the words that person said out loud, newline. No narration, no stage directions, no parentheses, no quotes around the line, no translations. Just the spoken words in English — the way people actually talk.\n\nWhen it is ${name}'s turn, write one natural reply — usually two or three sentences, a real conversational beat, not a one-word answer. Then stop. Example format:\n\nJordan: Hey man, you doing okay out here?\n${name}: Yeah boy, been a slow morning. Just watching the pumps and thinking about lunch. What you need?\nJordan: Got any jerky?\n${name}: Aisle two, mira, right by the sodas. The spicy one go quick so grab it if you see it.`
+  characterSystemPrompt = [
+    `You are ${name}. Stay in character. ${essence}`,
+    ``,
+    `This is a live voice chat. Reply with ONE short spoken line as ${name}, the way ${name} would actually talk out loud.`,
+    ``,
+    `Hard rules:`,
+    `- Output only ${name}'s own spoken words. Nothing else.`,
+    `- Do not write a name, a colon, or any speaker label anywhere.`,
+    `- Do not narrate actions, do not use parentheses, asterisks, brackets, stage directions, or emotes.`,
+    `- Do not continue the conversation past your one turn. Never write the other person's reply.`,
+    `- Do not repeat what the other person said. Do not translate their words.`,
+    `- If their message is unclear, noisy, non-speech, music, laughter, coughing, or just silence, reply with a single short natural filler in character (for example a brief "hmm?" or an "eh?" or "what was that") and stop.`,
+    `- Keep it short: one to three sentences, like a real conversational beat.`,
+    `- Stop after one reply. No follow-up turns, no further lines.`,
+  ].join('\n')
   console.log(`[processor] ✓ card loaded: ${name} | prompt=${characterSystemPrompt.length}ch`)
 }
 
@@ -103,7 +108,8 @@ export function setVoiceEmbedding(refAudioPath) {
 function getVoiceReferenceText() {
   if (voiceReferenceText !== null) return voiceReferenceText
   if (!voiceReferencePath) return null
-  const sidecar = voiceReferencePath.replace(/\.wav$/i, '.txt')
+  const lower = voiceReferencePath.toLowerCase()
+  const sidecar = lower.endsWith('.wav') ? voiceReferencePath.slice(0, -4) + '.txt' : voiceReferencePath + '.txt'
   if (!fs.existsSync(sidecar)) {
     console.warn(`[processor] ⚠ no ref-text sidecar ${sidecar} — voice clone DISABLED`)
     voiceReferenceText = ''
@@ -116,9 +122,14 @@ function getVoiceReferenceText() {
 
 function buildPromptWithHistory(userText, username, preambleText = null) {
   const hist = recentHistory.slice(-MAX_HISTORY * 2)
-  const ctx = hist.map(h => `${h.role === 'user' ? (h.username || 'Customer') : characterName}: ${h.text}`).join('\n')
-  const tail = preambleText ? `${characterName}: ${preambleText} ` : `${characterName}:`
-  return `${ctx ? ctx + '\n' : ''}${username}: ${userText}\n${tail}`
+  const turns = []
+  for (const h of hist) {
+    if (h.role === 'user') turns.push(`Them: ${h.text}`)
+    else turns.push(`You: ${h.text}`)
+  }
+  turns.push(`Them: ${userText}`)
+  const tail = preambleText ? `You: ${preambleText} ` : `You:`
+  return turns.join('\n') + '\n' + tail
 }
 
 export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, username = null) {
@@ -132,25 +143,13 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   console.log(`[pipe] ${tag} ▶ transcribe ${(pcmBuffer.length/1024).toFixed(1)}KB @${sampleRate}Hz`)
   const tTrans = Date.now()
   const transcription = await transcribe(pcmBuffer, sampleRate)
-  let userText = transcription.text?.trim() || ''
-  userText = userText.replace(/^>+\s*/, '').replace(/\s+/g, ' ').trim()
-  const phrases = userText.split(/[,.!?]\s+/).filter(Boolean)
-  if (phrases.length >= 5) {
-    const counts = new Map()
-    for (const p of phrases) counts.set(p, (counts.get(p) || 0) + 1)
-    const maxCount = Math.max(...counts.values())
-    if (maxCount >= 5) {
-      const mostCommon = [...counts.entries()].find(([, c]) => c === maxCount)[0]
-      console.log(`[processor] ⚠ whisper hallucination loop detected ("${mostCommon}" x${maxCount}) — collapsing`)
-      userText = mostCommon + '.'
-    }
-  }
+  const userText = (transcription.text || '').trim()
   const transMs = Date.now() - tTrans
   console.log(`[pipe] ${tag} ✓ transcribe ${transMs}ms conf=${transcription.confidence.toFixed(2)} → "${userText}"`)
 
   if (signal?.aborted) { console.log(`[pipe] ${tag} ✗ aborted after transcribe`); return null }
-  if (isNonSpeech(userText)) {
-    console.log(`[pipe] ${tag} ✗ skip: non-speech "${userText}"`)
+  if (!userText || userText.length < MIN_TRANSCRIPT_CHARS) {
+    console.log(`[pipe] ${tag} ✗ skip: empty transcript`)
     return null
   }
 
@@ -159,10 +158,7 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   const prompt = buildPromptWithHistory(userText, speaker)
   console.log(`[pipe] ${tag} ▶ generate hist=${recentHistory.length} prompt=${prompt.length}ch`)
   const tGen = Date.now()
-  let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal))
-  const nextTurn = responseText.search(/(?:^|\n|\s)[_*`]{0,2}[A-Za-z][\w`.\- ]{0,24}[_*`]{0,2}\s*:\s/)
-  if (nextTurn >= 0) responseText = responseText.slice(0, nextTurn)
-  responseText = responseText.trim()
+  let responseText = (await generateLLM(prompt, characterSystemPrompt || undefined, signal)).trim()
   const genMs = Date.now() - tGen
   console.log(`[pipe] ${tag} ✓ generate ${genMs}ms → "${responseText}"`)
   if (!responseText) return null
@@ -190,18 +186,11 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   return resampled
 }
 
-function splitSentences(text) {
-  const parts = text.match(/[^.!?]+[.!?]+(\s+|$)|[^.!?]+$/g)
-  if (!parts) return [text]
-  const out = []
-  let buf = ''
-  for (const p of parts) {
-    buf += p
-    if (buf.length >= 25 || /[.!?]\s*$/.test(buf)) { out.push(buf.trim()); buf = '' }
-  }
-  if (buf.trim()) out.push(buf.trim())
-  return out.filter(Boolean)
-}
+const SENTENCE_END_CHARS = new Set(['.', '!', '?'])
+const SOFT_BREAK_CHARS = new Set([',', ';', ':', '—', '–'])
+const FIRST_CHUNK_MIN = 14
+const NEXT_CHUNK_MIN = 24
+const MAX_RESPONSE_CHARS = 280
 
 export async function processTranscript(rawText, confidence, userId, signal, username = null, onChunk = null, preambleText = null) {
   const t0 = Date.now()
@@ -209,23 +198,12 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   const tag = `uid=${userId} (${speaker})`
   if (!voiceReferencePath) throw new Error(`step=voiceEmbed ${tag}: no voice ref`)
 
-  let userText = (rawText || '').trim().replace(/^>+\s*/, '').replace(/\s+/g, ' ').trim()
-  const phrases = userText.split(/[,.!?]\s+/).filter(Boolean)
-  if (phrases.length >= 5) {
-    const counts = new Map()
-    for (const p of phrases) counts.set(p, (counts.get(p) || 0) + 1)
-    const maxCount = Math.max(...counts.values())
-    if (maxCount >= 5) {
-      const mostCommon = [...counts.entries()].find(([, c]) => c === maxCount)[0]
-      console.log(`[processor] ⚠ whisper hallucination loop ("${mostCommon}" x${maxCount}) — collapsing`)
-      userText = mostCommon + '.'
-    }
-  }
+  const userText = (rawText || '').trim()
   console.log(`[pipe] ${tag} text="${userText}" conf=${(confidence||0).toFixed(2)}`)
 
   if (signal?.aborted) return null
-  if (isNonSpeech(userText)) {
-    console.log(`[pipe] ${tag} ✗ skip: non-speech "${userText}"`)
+  if (!userText || userText.length < MIN_TRANSCRIPT_CHARS) {
+    console.log(`[pipe] ${tag} ✗ skip: empty transcript`)
     return null
   }
   if (!(await isLLMAvailable())) { console.log(`[pipe] ${tag} ✗ LLM unavailable`); return null }
@@ -235,7 +213,7 @@ export async function processTranscript(rawText, confidence, userId, signal, use
   const refText = getVoiceReferenceText()
   const tGen = Date.now()
 
-  let accum = ''
+  let pending = ''
   let responseText = ''
   let ttsChain = Promise.resolve()
   const allAudio = []
@@ -264,32 +242,37 @@ export async function processTranscript(rawText, confidence, userId, signal, use
     })
   }
 
-  const MAX_RESPONSE_CHARS = 280
+  const tryFlush = () => {
+    if (!pending) return
+    const minLen = allAudio.length === 0 && !firstAudioAt ? FIRST_CHUNK_MIN : NEXT_CHUNK_MIN
+    if (pending.length < minLen) return
+    let cut = -1
+    for (let i = pending.length - 1; i >= minLen - 1; i--) {
+      if (SENTENCE_END_CHARS.has(pending[i]) && (i + 1 === pending.length || pending[i+1] === ' ')) { cut = i + 1; break }
+    }
+    if (cut < 0) {
+      for (let i = pending.length - 1; i >= minLen - 1; i--) {
+        if (SOFT_BREAK_CHARS.has(pending[i]) && (i + 1 === pending.length || pending[i+1] === ' ')) { cut = i + 1; break }
+      }
+    }
+    if (cut < 0) return
+    flushSentence(pending.slice(0, cut))
+    pending = pending.slice(cut).trimStart()
+  }
+
   try {
     for await (const tok of generateTokens(prompt, characterSystemPrompt || undefined, signal)) {
       if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
-      accum += tok
-      const turnIdx = accum.search(/(?:^|\n|\s)[_*`]{0,2}[A-Za-z][\w`.\- ]{0,24}[_*`]{0,2}\s*:\s/)
-      if (turnIdx >= 0) { accum = accum.slice(0, turnIdx); stopRequested = true; break }
-      if (responseText.length + accum.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
-      const isFirst = !firstAudioAt && allAudio.length === 0 && ttsChain === Promise.resolve ? true : (allAudio.length === 0 && !firstAudioAt)
-      const splitRe = isFirst ? /^([\s\S]*?[,;:.!?\-])(\s+|$)/ : /^([\s\S]*?[.!?])(\s+|$)/
-      const minLen = isFirst ? 6 : 18
-      let m
-      let pending = ''
-      while ((m = accum.match(splitRe))) {
-        pending += m[1] + ' '
-        accum = accum.slice(m[0].length)
-        if (pending.length >= minLen) { flushSentence(pending.trim()); pending = '' }
-        if (responseText.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
-      }
-      if (pending.trim()) accum = pending + accum
+      pending += tok
+      if (responseText.length + pending.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
+      tryFlush()
       if (stopRequested) break
     }
   } catch (err) {
     if (err.name !== 'AbortError') throw err
   }
-  if (!stopRequested && accum.trim()) flushSentence(accum)
+  const tail = pending.trim()
+  if (!stopRequested && tail) flushSentence(tail)
   await ttsChain
 
   responseText = responseText.trim()
