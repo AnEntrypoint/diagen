@@ -135,7 +135,7 @@ export function onPcmChunk(userId, stereoF32) {
   const effectiveThreshold = botSpeaking ? INTERRUPT_THRESHOLD : SILENCE_THRESHOLD_BASE
   const isSpeech = level > effectiveThreshold
 
-  if (!botSpeaking) pushFrame(userId, f32)
+  pushFrame(userId, f32)
 
   if (buf.processing) {
     if (isSpeech && level > INTERRUPT_THRESHOLD) {
