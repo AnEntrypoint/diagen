@@ -1,0 +1,54 @@
+name: Rust build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust-build.yml'
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-build-${{ matrix.os }}
+
+      - name: cargo build (workspace, debug)
+        run: cargo build --workspace --all-targets
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --all-targets
+
+      - name: cargo build (release binary)
+        run: cargo build --release -p diagen
+
+      - name: Upload diagen binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagen-${{ matrix.os }}
+          path: |
+            target/release/diagen
+            target/release/diagen.exe
+          if-no-files-found: ignore

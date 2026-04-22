@@ -34,4 +34,12 @@ logs/
 *.tmp
 
 .plugkit-browser-profile-*/
+
+# gm skill working document
+.gm/
+
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock.bak
 .plugkit-agent-worktree/

@@ -1,0 +1,22 @@
+[package]
+name = "diagen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Real-time AI voice bot for Discord — single binary"
+
+[[bin]]
+name = "diagen"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+diagen-tts = { path = "../diagen-tts" }
+diagen-llm = { path = "../diagen-llm" }
+diagen-stt = { path = "../diagen-stt" }
+diagen-discord = { path = "../diagen-discord" }
+diagen-gate = { path = "../diagen-gate" }
+diagen-server = { path = "../diagen-server" }
