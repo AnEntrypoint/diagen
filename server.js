@@ -6,7 +6,7 @@ import { createRequire } from 'module'
 import { Audio2FaceCore } from './audio2afan_core.mjs'
 import ort from 'onnxruntime-node'
 import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
-import { synthesize as synthesizeOmniVoice } from './pocket-tts-bridge.js'
+import { synthesize as synthesizeTTS } from './qwen3-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import os from 'os'
 
@@ -116,7 +116,7 @@ app.post('/api/generate', async (req, res) => {
     if (!voiceEmb) return res.status(500).json({ error: 'Voice embedding not available' })
     const startTime = performance.now()
 
-    const audioFloat = await synthesizeOmniVoice(text, voiceEmb, 'reference speech')
+    const audioFloat = await synthesizeTTS(text, voiceEmb, 'reference speech')
     const [audioWav, audio16k] = await Promise.all([
       Promise.resolve(encodeWAV(audioFloat, SAMPLE_RATE)),
       Promise.resolve(resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE))
@@ -311,9 +311,9 @@ async function start() {
   // Warm up TTS to avoid first-call timeout (model download ~5-10min)
   if (process.env.WARMUP_TTS !== 'false' && !discordOnly) {
     try {
-      console.log('[server] Warming up OmniVoice TTS (first-time model download)...')
+      console.log('[server] Warming up Qwen3-TTS (first-time model download)...')
       const warmupStart = performance.now()
-      await synthesizeOmniVoice('Server starting', CLEETUS_WAV, 'test warmup')
+      await synthesizeTTS('Server starting', CLEETUS_WAV, 'test warmup')
       const warmupTime = ((performance.now() - warmupStart) / 1000).toFixed(1)
       console.log(`[server] TTS warmup complete (${warmupTime}s) - subsequent calls will be fast`)
     } catch (err) {

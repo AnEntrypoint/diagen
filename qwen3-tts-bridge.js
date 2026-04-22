@@ -1,12 +1,12 @@
 import { spawn } from 'child_process'
-import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import readline from 'readline'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const SERVER_SCRIPT = path.join(__dirname, 'pocket_tts_server.py')
-const HF_CACHE = path.join(__dirname, 'models', 'pocket-tts')
+const SERVER_SCRIPT = path.join(__dirname, 'qwen3_tts_server.py')
+const STARTUP_TIMEOUT_MS = Number(process.env.QWEN3_TTS_STARTUP_MS || 1200000)
+const SYNTH_TIMEOUT_MS = Number(process.env.QWEN3_TTS_SYNTH_MS || 120000)
 
 let ttsProcess = null
 let processReady = false
@@ -24,27 +24,27 @@ function dispatch(obj) {
   pending.delete(id)
   if (obj.done) { p.resolveDone?.(obj); return }
   if (obj.success) p.resolve(obj)
-  else p.reject(new Error(`pocket-tts: ${obj.error || 'unknown error'}`))
+  else p.reject(new Error(`qwen3-tts: ${obj.error || 'unknown error'}`))
 }
 
 function startTtsProcess() {
   if (processReady) return Promise.resolve()
   if (startPromise) return startPromise
   startPromise = new Promise((resolve, reject) => {
-    const pythonCmd = process.env.POCKET_TTS_PYTHON || 'python'
-    ttsProcess = spawn(pythonCmd, [SERVER_SCRIPT], {
+    const pythonCmd = process.env.QWEN3_TTS_PYTHON || 'python'
+    ttsProcess = spawn(pythonCmd, ['-u', SERVER_SCRIPT], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
     })
     let stderrBuf = ''
     const readyTimeout = setTimeout(() => {
       if (ttsProcess) ttsProcess.kill()
-      reject(new Error('pocket-tts startup timeout (600s)'))
-    }, 600000)
+      reject(new Error(`qwen3-tts startup timeout (${STARTUP_TIMEOUT_MS}ms)`))
+    }, STARTUP_TIMEOUT_MS)
     ttsProcess.stderr.on('data', (chunk) => {
       const s = chunk.toString()
       stderrBuf += s
-      process.stderr.write('[pocket-tts] ' + s)
+      process.stderr.write('[qwen3-tts] ' + s)
       if (!processReady && stderrBuf.includes('Model ready')) {
         processReady = true
         clearTimeout(readyTimeout)
@@ -54,12 +54,12 @@ function startTtsProcess() {
     rl = readline.createInterface({ input: ttsProcess.stdout })
     rl.on('line', (line) => {
       if (!line.trim()) return
-      try { dispatch(JSON.parse(line)) } catch (err) { console.error('[pocket-tts] bad json:', line.slice(0, 200)) }
+      try { dispatch(JSON.parse(line)) } catch { console.error('[qwen3-tts] bad json:', line.slice(0, 200)) }
     })
-    ttsProcess.on('error', (err) => { clearTimeout(readyTimeout); processReady = false; reject(new Error(`pocket-tts spawn failed: ${err.message}`)) })
+    ttsProcess.on('error', (err) => { clearTimeout(readyTimeout); processReady = false; reject(new Error(`qwen3-tts spawn failed: ${err.message}`)) })
     ttsProcess.on('exit', (code) => {
       processReady = false; ttsProcess = null; startPromise = null
-      const err = new Error(`pocket-tts exited code=${code}`)
+      const err = new Error(`qwen3-tts exited code=${code}`)
       for (const p of pending.values()) p.reject(err)
       pending.clear()
     })
@@ -73,34 +73,42 @@ function enqueue(fn) {
   return queueChain
 }
 
-export async function synthesize(text, refAudioPath, _refText, signal) {
+function decodeAudio(obj) {
+  const buf = Buffer.from(obj.audio_b64, 'base64')
+  const int16 = new Int16Array(buf.buffer, buf.byteOffset, buf.length / 2)
+  const audio = new Float32Array(int16.length)
+  for (let i = 0; i < int16.length; i++) audio[i] = int16[i] / 32768
+  return { audio, sampleRate: obj.sample_rate || 24000 }
+}
+
+export async function synthesize(text, refAudioPath, refText, signal) {
   if (!text) throw new Error('text required')
   await startTtsProcess()
   return enqueue(() => {
-    if (signal?.aborted) { console.log('[pocket-tts] skip synth (already aborted)'); return null }
+    if (signal?.aborted) { console.log('[qwen3-tts] skip synth (already aborted)'); return null }
     const id = nextId++
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { pending.delete(id); reject(new Error('pocket-tts synth timeout (120s)')) }, 120000)
+      const timeout = setTimeout(() => { pending.delete(id); reject(new Error(`qwen3-tts synth timeout (${SYNTH_TIMEOUT_MS}ms)`)) }, SYNTH_TIMEOUT_MS)
       const onAbort = () => { pending.delete(id); clearTimeout(timeout); resolve(null) }
       signal?.addEventListener?.('abort', onAbort, { once: true })
       pending.set(id, {
         resolve: (obj) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); resolve(decodeAudio(obj)) },
         reject: (err) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); reject(err) },
       })
-      ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, streaming: false }) + '\n')
+      ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, ref_text: refText || '', streaming: false }) + '\n')
     })
   })
 }
 
-export async function synthesizeStream(text, refAudioPath, _refText, onChunk, signal) {
+export async function synthesizeStream(text, refAudioPath, refText, onChunk, signal) {
   if (!text) throw new Error('text required')
   if (typeof onChunk !== 'function') throw new Error('onChunk required for streaming')
   await startTtsProcess()
   return enqueue(() => {
-    if (signal?.aborted) { console.log('[pocket-tts] skip stream (already aborted)'); return { sampleRate: 24000, aborted: true } }
+    if (signal?.aborted) { console.log('[qwen3-tts] skip stream (already aborted)'); return { sampleRate: 24000, aborted: true } }
     const id = nextId++
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { pending.delete(id); reject(new Error('pocket-tts stream timeout (120s)')) }, 120000)
+      const timeout = setTimeout(() => { pending.delete(id); reject(new Error(`qwen3-tts stream timeout (${SYNTH_TIMEOUT_MS}ms)`)) }, SYNTH_TIMEOUT_MS)
       const onAbort = () => { pending.delete(id); clearTimeout(timeout); resolve({ sampleRate: 24000, aborted: true }) }
       signal?.addEventListener?.('abort', onAbort, { once: true })
       pending.set(id, {
@@ -109,17 +117,9 @@ export async function synthesizeStream(text, refAudioPath, _refText, onChunk, si
         reject: (err) => { clearTimeout(timeout); signal?.removeEventListener?.('abort', onAbort); reject(err) },
         resolve: () => {},
       })
-      ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, streaming: true }) + '\n')
+      ttsProcess.stdin.write(JSON.stringify({ id, text, ref_audio_path: refAudioPath || null, ref_text: refText || '', streaming: true }) + '\n')
     })
   })
-}
-
-function decodeAudio(obj) {
-  const buf = Buffer.from(obj.audio_b64, 'base64')
-  const int16 = new Int16Array(buf.buffer, buf.byteOffset, buf.length / 2)
-  const audio = new Float32Array(int16.length)
-  for (let i = 0; i < int16.length; i++) audio[i] = int16[i] / 32768
-  return { audio, sampleRate: obj.sample_rate || 24000 }
 }
 
 export function shutdown() {

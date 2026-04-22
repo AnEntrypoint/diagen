@@ -1,6 +1,6 @@
 import { transcribe } from './discord-whisper.js'
 import { resampleAudio } from './server-utils.mjs'
-import { synthesize, synthesizeStream } from './pocket-tts-bridge.js'
+import { synthesize, synthesizeStream } from './qwen3-tts-bridge.js'
 import { generate as generateLLM, generateTokens, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import fs from 'fs'
 

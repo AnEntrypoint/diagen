@@ -1,4 +1,4 @@
-import { synthesize } from './pocket-tts-bridge.js'
+import { synthesize } from './qwen3-tts-bridge.js'
 import { resampleAudio } from './server-utils.mjs'
 import fs from 'fs'
 

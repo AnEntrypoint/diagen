@@ -1,5 +1,8 @@
 
 ## [unreleased]
+- feat: swap Pocket TTS for Qwen3-TTS-12Hz-0.6B via faster-qwen3-tts (CUDA-graph streaming, ~700-850ms first chunk, ~1.3x RT warm)
+- new: qwen3-tts-bridge.js + qwen3_tts_server.py (Node↔Python subprocess, identical synthesize/synthesizeStream contract to prior bridges)
+- chore: delete pocket-tts-bridge.js, pocket_tts_server.py, omnivoice-tts-bridge.js, omnivoice_tts_server.py
 - fix: on voice close code 4017, force gateway shard reconnect (recover=0) to get fresh session_id instead of waiting 10s with stale session
 
 ## 2026-04-17

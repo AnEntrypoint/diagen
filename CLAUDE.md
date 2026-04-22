@@ -120,93 +120,65 @@ transformer.layers.{i}.self_attn/current_end
 
 - **HTML-poisoned cache**: GitHub Pages 404 responses are HTML (`<!DOCTYPE html>`) and can be large enough to pass a byte-size check. The cache bust must also check the first byte: `new Uint8Array(buf.slice(0,1))[0] === 0x3C` means HTML, delete it.
 
-## TTS — OmniVoice Python Backend with Voice Cloning
+## TTS — Server-Side: Qwen3-TTS via faster-qwen3-tts
 
-Discord voice and server-side text-to-speech use **OmniVoice** (TTS system supporting 600+ languages) running as a Python subprocess for cross-platform compatibility and native voice cloning.
+Discord voice and server-side text-to-speech use **Qwen3-TTS-12Hz-0.6B-Base** (Apache 2.0, Alibaba/QwenLM) wrapped by the **faster-qwen3-tts** community package (CUDA graph capture for low-latency streaming). Browser demo is unrelated and stays on Pocket TTS WASM (no browser runtime exists for Qwen3-TTS).
 
 ### Setup
 
-OmniVoice requires Python 3.8+ with pip. Installation:
+Requires Python 3.10+, NVIDIA GPU with CUDA, PyTorch 2.5.1+. Installation:
 ```bash
-pip install omnivoice
+pip install -U faster-qwen3-tts
 ```
 
-On first synthesis call, OmniVoice downloads model weights (~500MB) from HuggingFace to ~/.cache/huggingface/hub/. Subsequent calls reuse cached model.
+On first synthesis call, downloads ~2.1GB of weights from HuggingFace to `~/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-0.6B-Base/`. Subsequent process starts reuse the cache.
 
 ### Architecture
 
-**Node.js→Python bridge**: omnivoice-tts-bridge.js spawns persistent Python subprocess (omnivoice_tts_server.py) that manages model lifecycle.
+**Node.js→Python bridge**: `qwen3-tts-bridge.js` spawns a persistent Python subprocess (`qwen3_tts_server.py`) speaking JSON over stdin/stdout.
 
-**Communication protocol** (JSON over stdin/stdout):
 ```javascript
-import { synthesize } from './omnivoice-tts-bridge.js';
+import { synthesize, synthesizeStream } from './qwen3-tts-bridge.js'
 
-// Basic synthesis
-const audioFloat32 = await synthesize('Hello world');
+// One-shot — returns { audio: Float32Array, sampleRate: 24000 }
+const { audio, sampleRate } = await synthesize('hello world', refAudioPath, refText, signal)
 
-// With voice cloning (reference audio for style transfer)
-const audioWithClone = await synthesize('Custom voice text', '/path/to/voice.wav', 'reference speech');
+// Streaming — onChunk fires per audio chunk during generation
+await synthesizeStream(text, refAudioPath, refText, (chunk, sr) => { /* play */ }, signal)
 ```
 
-**Request format** (sent to Python subprocess):
-```json
-{
-  "text": "text to synthesize",
-  "ref_audio_b64": "base64-encoded WAV or null",
-  "ref_text": "transcription of reference audio (optional)"
-}
-```
-
-**Response format** (from Python subprocess):
-```json
-{
-  "success": true,
-  "audio_b64": "base64-encoded 24kHz float32 WAV",
-  "error": null
-}
-```
+The bridge serializes calls via an internal queue chain, supports AbortSignal-driven cancellation, and reconnects on subprocess exit.
 
 ### Voice Cloning
 
-Custom voice synthesis via reference audio:
+Voice clone REQUIRES BOTH `ref_audio` (WAV path) AND `ref_text` (transcript of the reference). The Python server auto-loads a sidecar `.txt` next to the ref WAV — `voices/cleetus.wav` pairs with `voices/cleetus.txt`. Set defaults via env:
 
-1. **Reference audio**: WAV file (any sample rate, 5-30 seconds of clear speech)
-2. **Reference text**: Accurate transcription of reference audio content
-3. **Synthesis**: OmniVoice encodes reference audio and applies style to target text
+- `QWEN3_TTS_DEFAULT_REF` — WAV path (default: `voices/cleetus.wav`)
+- `QWEN3_TTS_DEFAULT_REF_TEXT` — overrides sidecar
+- `QWEN3_TTS_LANGUAGE` — default `English`
+- `QWEN3_TTS_CHUNK_SIZE` — streaming chunk size (default 12)
+- `QWEN3_TTS_PYTHON` — interpreter (default `python`)
+- `QWEN3_TTS_STARTUP_MS` — startup timeout (default 1200000 to allow first download)
+- `QWEN3_TTS_SYNTH_MS` — per-synth timeout (default 120000)
 
-**Example** (Discord voice integration):
-```javascript
-// voices/cleetus.wav is reference recording
-const output = await synthesize(
-  'I am speaking in the Cleetus voice',
-  '/path/to/voices/cleetus.wav',
-  'reference speech'
-);
-// Returns 24kHz float32 Float32Array ready for Discord transmission
-```
+### Performance (RTX 3060 Laptop GPU, witnessed)
 
-### Language Support
+- Process start (cached weights): ~23s + first call ~13–15s (one-time CUDA graph capture for predictor + talker)
+- Warm streaming: first chunk ~700–850ms, total ~1.3× realtime
+- Warm one-shot: ~1.8× realtime
+- Output: 24000 Hz Int16 PCM (decoded to Float32 in the bridge)
 
-OmniVoice supports 600+ languages via multilingual training. No special configuration required — language detected automatically from input text. Examples: English, Mandarin, Spanish, French, German, Japanese, Korean, Arabic, Hindi, and many others.
-
-### Subprocess Lifecycle
-
-- **First call**: Spawns Python process, loads model (~30s), caches in memory
-- **Subsequent calls**: Reuse same subprocess, ~3s per synthesis (model already loaded)
-- **Concurrent requests**: Queued internally; subprocess processes one at a time
-- **Timeouts**: 30s timeout per synthesis call; longer requests fail with clear error
-- **Cleanup**: shutdown() function kills subprocess and clears resources
+The subprocess server prints model warmup status to stdout; the server permanently rebinds `sys.stdout` to `sys.stderr` after startup so library prints do not poison the JSON IPC channel.
 
 ### Integration Points
 
-**Discord voice pipeline** (discord-voice-processor.js):
-- Transcribe user audio (Whisper STT) → Generate response → **Synthesize via OmniVoice** → Resample → Send to Discord
-- Voice reference: voices/cleetus.wav (set via setVoiceEmbedding())
-- Output: 24kHz float32 audio, resampled to Discord 48kHz for transmission
+- **Discord voice pipeline** (`discord-voice-processor.js`): transcribe user audio → generate text → `synthesizeStream` → resample 24k→48k → `pushAudioFrame`
+- **Preamble cache** (`preamble-cache.js`): pre-renders short interjections at startup for instant playback
+- **Web demo API** (`/api/generate` in `server.js`): one-shot `synthesize` for facial animation flow
 
-**Web demo API** (/api/generate):
-- Accepts text input, synthesizes with OmniVoice, returns WAV for facial animation
-- Uses voice reference for consistent character voice
+### Switching back to a different engine
+
+If `faster-qwen3-tts` breaks (it is a community fork), the official `qwen-tts` package implements the same `Qwen3TTSModel` API but lacks the streaming wrapper — `generate_voice_clone_streaming` would have to be replaced with one-shot `generate_voice_clone` calls in `qwen3_tts_server.py`. The bridge contract stays unchanged.
 
 ## Discord Bot Integration
 
