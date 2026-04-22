@@ -144,7 +144,7 @@ const stageHandlers = {
 const MIN_WORD_CHARS = Number(process.env.GATE_MIN_WORD_CHARS || 3)
 
 function stripSentinels(text) {
-  return text.replace(/\[[^\]]*\]|\*[^*]*\*/g, ' ').trim()
+  return text.replace(/\[[^\]]*\]|\*[^*]*\*|\([^)]*\)/g, ' ').trim()
 }
 
 function isWordlessOrSentinel(text) {
