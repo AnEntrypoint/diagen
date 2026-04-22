@@ -38,6 +38,10 @@ logs/
 # gm skill working document
 .gm/
 
+# Server runtime artifacts (detached spawn)
+.server.pid
+server*.log
+
 # Rust build artifacts
 target/
 **/*.rs.bk
