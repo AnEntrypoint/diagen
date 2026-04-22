@@ -3,9 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
-import { Audio2FaceCore } from './audio2afan_core.mjs'
-import ort from 'onnxruntime-node'
-import { ARKIT_NAMES, encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
+import { encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
 import { synthesize as synthesizeTTS } from './qwen3-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import os from 'os'
@@ -36,22 +34,31 @@ let getDiscordClient = null
 
 const require = createRequire(import.meta.url)
 const ORT_CPUS = os.cpus().length
-const origOrtCreate = ort.InferenceSession.create.bind(ort.InferenceSession)
-ort.InferenceSession.create = async function(modelPath, options = {}) {
-  const explicit = options.executionProviders
-  const providers = explicit || ['cpu']
-  const wantDml = !explicit || (!providers.includes('cpu') || providers.length > 1)
-  const patched = {
-    ...options,
-    executionProviders: (wantDml && !providers.includes('dml')) ? ['dml', ...providers] : providers,
-    intraOpNumThreads: Math.max(options.intraOpNumThreads || 0, ORT_CPUS),
-    interOpNumThreads: Math.max(options.interOpNumThreads || 0, Math.floor(ORT_CPUS / 4)),
-    executionMode: 'parallel',
-    enableCpuMemArena: true,
-    enableMemPattern: true,
-    graphOptimizationLevel: options.graphOptimizationLevel || 'all',
+
+let _ortPatched = false
+async function getOrt() {
+  const ort = (await import('onnxruntime-node')).default
+  if (!_ortPatched) {
+    const origOrtCreate = ort.InferenceSession.create.bind(ort.InferenceSession)
+    ort.InferenceSession.create = async function(modelPath, options = {}) {
+      const explicit = options.executionProviders
+      const providers = explicit || ['cpu']
+      const wantDml = !explicit || (!providers.includes('cpu') || providers.length > 1)
+      const patched = {
+        ...options,
+        executionProviders: (wantDml && !providers.includes('dml')) ? ['dml', ...providers] : providers,
+        intraOpNumThreads: Math.max(options.intraOpNumThreads || 0, ORT_CPUS),
+        interOpNumThreads: Math.max(options.interOpNumThreads || 0, Math.floor(ORT_CPUS / 4)),
+        executionMode: 'parallel',
+        enableCpuMemArena: true,
+        enableMemPattern: true,
+        graphOptimizationLevel: options.graphOptimizationLevel || 'all',
+      }
+      return origOrtCreate(modelPath, patched)
+    }
+    _ortPatched = true
   }
-  return origOrtCreate(modelPath, patched)
+  return ort
 }
 
 const app = express()
@@ -89,6 +96,8 @@ let a2f = null, voiceEmbedding = null
 
 async function loadA2F() {
   if (a2f) return a2f
+  const ort = await getOrt()
+  const { Audio2FaceCore } = await import('./audio2afan_core.mjs')
   const audio2afanDir = path.join(__dirname, 'models', 'audio2afan')
   a2f = new Audio2FaceCore({ ort })
   await a2f.loadConfigFile(path.join(audio2afanDir, 'config.json'))
