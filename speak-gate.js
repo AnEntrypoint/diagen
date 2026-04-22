@@ -105,7 +105,12 @@ const stageHandlers = {
     else setState('LISTENING', 'gate=NO')
   },
   ANSWERING: async (abort) => {
-    const raw = await generateLLM(`${buildContext()}\n\nReply with the bot's next spoken turn. Keep it conversational and short.`, state.characterPrompt || undefined, abort.signal)
+    const now = Date.now()
+    const recent = [...state.activeSpeakers.values()].filter(s => now - s.lastWordAt < 5000)
+    const multiHint = recent.length >= 2
+      ? `\n\nMultiple people just spoke at the same time: ${recent.map(s => s.username).join(' and ')}. Address both in your one reply.`
+      : ''
+    const raw = await generateLLM(`${buildContext()}${multiHint}\n\nReply with the bot's next spoken turn. Keep it conversational and short.`, state.characterPrompt || undefined, abort.signal)
     if (state.abort !== abort) return
     const text = (raw || '').trim().slice(0, MAX_RESPONSE_CHARS)
     if (!text) { setState('LISTENING', 'empty answer'); return }
