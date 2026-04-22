@@ -15,8 +15,8 @@ const MAX_HISTORY = 12
 
 const GATE_PROMPT = [
   'You decide whether the bot should speak now. Read the recent conversation. The user just stopped talking.',
-  'Reply YES if the bot should respond — they asked a question, addressed the bot, or made a statement that needs acknowledgment.',
-  'Reply NO if the bot should stay silent — the user was talking to someone else, was mid-thought, said something trivial, or the bot already responded.',
+  'Reply YES by default — the bot is conversational and should join in. Lean YES whenever the user said anything substantive, asked a question, addressed the bot, used the bot\'s name, or made a remark worth reacting to.',
+  'Reply NO only when the user clearly addressed someone else by name, was obviously mid-sentence with no pause, said something trivial like a single filler word, or the bot already replied to this exact thing.',
   'Output only YES or NO.',
 ].join('\n')
 
