@@ -179,6 +179,27 @@ The subprocess server prints model warmup status to stdout; the server permanent
 
 If `faster-qwen3-tts` breaks (it is a community fork), the official `qwen-tts` package implements the same `Qwen3TTSModel` API but lacks the streaming wrapper — `generate_voice_clone_streaming` would have to be replaced with one-shot `generate_voice_clone` calls in `qwen3_tts_server.py`. The bridge contract stays unchanged.
 
+## node-llama-cpp — GPU Detection & Invocation Pitfall
+
+**Critical diagnostic lesson (witnessed 2026-04-22)**:
+
+False diagnosis led to a multi-week Rust rewrite plan. **Root cause**: When invoking node-llama-cpp via `node --input-type=module -e "import { getLlama } ... "`, the flag propagates to child processes. node-llama-cpp uses `child_process.fork(testBindingBinary.js)` to probe CUDA addon availability. The child inherits `--input-type=module`, which is invalid for file execution (only valid for `--eval`/`--print`/STDIN). Child exits with `ERR_INPUT_TYPE_NOT_ALLOWED`. node-llama-cpp interprets this as "CUDA failed", falls back to Vulkan (same error), then to CPU — silently.
+
+**Always invoke via a real `.mjs` file**, not `node --input-type=module -e`. Example:
+```javascript
+// probe.mjs
+import { getLlama } from 'node-llama-cpp';
+const llama = await getLlama();
+console.log('GPU:', llama.getGpu());
+```
+Then: `node probe.mjs`
+
+**Performance impact** (RTX 3060 Laptop, CUDA v12.6):
+- Wrong invocation: 12–28s (CPU fallback), grammar-constrained generation 12–28s per call
+- Correct invocation: 2.3s getLlama(), 128ms warm generation (100× faster)
+
+**Lesson**: When probing packages using `child_process.fork()` on their own files (addon tests, binding probes), never use `node --input-type=module -e`. The flag propagates to children where it's invalid and causes silent fallbacks.
+
 ## Discord Bot Integration
 
 Diagen includes optional Discord bot support for text and voice interactions.
