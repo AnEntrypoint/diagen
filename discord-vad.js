@@ -3,7 +3,7 @@ import { pushFrame, onPartial, onStable } from './whisper-stream.js'
 import * as speakGate from './speak-gate.js'
 
 const SAMPLE_RATE = 48000
-const ACTIVE_RMS = Number(process.env.VAD_ACTIVE_RMS || 0.005)
+const ACTIVE_RMS = Number(process.env.VAD_ACTIVE_RMS || 0.02)
 const TARGET_RMS = 0.15
 const MAX_GAIN = 25
 const MIN_GAIN = 1

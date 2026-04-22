@@ -136,22 +136,17 @@ const stageHandlers = {
   },
 }
 
+const MIN_WORD_CHARS = Number(process.env.GATE_MIN_WORD_CHARS || 3)
+
+function stripSentinels(text) {
+  return text.replace(/\[[^\]]*\]|\*[^*]*\*/g, ' ').trim()
+}
+
 function isWordlessOrSentinel(text) {
   if (!text) return true
-  const t = text.trim()
-  if (!t) return true
-  let i = 0
-  while (i < t.length) {
-    while (i < t.length && t.charAt(i) === ' ') i++
-    if (i >= t.length) break
-    const open = t.charAt(i)
-    if (open !== '[' && open !== '*') return !/[a-zA-Z0-9]/.test(t)
-    const close = open === '[' ? ']' : '*'
-    const end = t.indexOf(close, i + 1)
-    if (end < 0) return !/[a-zA-Z0-9]/.test(t)
-    i = end + 1
-  }
-  return true
+  const stripped = stripSentinels(text.trim())
+  const alphanumCount = (stripped.match(/[a-zA-Z0-9]/g) || []).length
+  return alphanumCount < MIN_WORD_CHARS
 }
 
 export function noteWhisperWord({ userId, username, text }) {
