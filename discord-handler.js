@@ -136,18 +136,30 @@ async function connectToVoiceChannel(guildId, channelId) {
   const guild = await discordClient.guilds.fetch(guildId)
   const channel = await guild.channels.fetch(channelId)
   console.log(`[voice] channel ${channel.name} type=${channel.type} members=${channel.members.size}`)
+
+  const subscribeMember = (member) => {
+    if (member.user.bot || subscribedUsers.has(member.id)) return
+    const displayName = member.nickname || member.displayName || member.user.globalName || member.user.username
+    usernames.set(member.id, displayName)
+    subscribedUsers.add(member.id)
+    subscribeToSpeaker(member.id, onPcmChunk)
+    console.log(`[voice] pre-subscribed to ${member.id} (${displayName})`)
+  }
+
   if (channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice) {
     for (const member of channel.members.values()) {
       console.log(`[voice] channel member: ${member.id} bot=${member.user.bot} name=${member.user.username}`)
-      const displayName = member.nickname || member.displayName || member.user.globalName || member.user.username
-      usernames.set(member.id, displayName)
-      if (!member.user.bot && !subscribedUsers.has(member.id)) {
-        subscribedUsers.add(member.id)
-        subscribeToSpeaker(member.id, onPcmChunk)
-        console.log(`[voice] pre-subscribed to ${member.id} (${displayName})`)
-      }
+      subscribeMember(member)
     }
   }
+
+  discordClient.on('voiceStateUpdate', (oldState, newState) => {
+    if (newState.channelId !== channelId) return
+    if (oldState.channelId === channelId) return
+    if (!newState.member) return
+    console.log(`[voice] voiceStateUpdate: ${newState.member.user.username} joined ${channelId}`)
+    subscribeMember(newState.member)
+  })
 }
 
 function disconnectFromVoiceChannel() {
