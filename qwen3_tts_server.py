@@ -23,7 +23,7 @@ def _read_sidecar(wav_path, suffix):
 
 DEFAULT_REF_TEXT = os.environ.get('QWEN3_TTS_DEFAULT_REF_TEXT') or _read_sidecar(DEFAULT_REF, '.txt')
 LANGUAGE = os.environ.get('QWEN3_TTS_LANGUAGE', 'English')
-CHUNK_SIZE = int(os.environ.get('QWEN3_TTS_CHUNK_SIZE', '12'))
+CHUNK_SIZE = int(os.environ.get('QWEN3_TTS_CHUNK_SIZE', '4'))
 
 print(f'[qwen3-tts] Loading {MODEL_NAME} device={DEVICE} attn={ATTN}...', file=sys.stderr, flush=True)
 import torch

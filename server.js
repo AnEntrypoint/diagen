@@ -308,12 +308,13 @@ async function start() {
   }
   await loadVoiceEmbedding()
 
-  // Warm up TTS to avoid first-call timeout (model download ~5-10min)
-  if (process.env.WARMUP_TTS !== 'false' && !discordOnly) {
+  // Warm up TTS — pays the one-time CUDA-graph-capture cost up front so the
+  // first user utterance is already at warm-streaming latency (~700ms first chunk)
+  if (process.env.WARMUP_TTS !== 'false') {
     try {
-      console.log('[server] Warming up Qwen3-TTS (first-time model download)...')
+      console.log('[server] Warming up Qwen3-TTS (first call captures CUDA graphs)...')
       const warmupStart = performance.now()
-      await synthesizeTTS('Server starting', CLEETUS_WAV, 'test warmup')
+      await synthesizeTTS('Server starting', CLEETUS_WAV, null)
       const warmupTime = ((performance.now() - warmupStart) / 1000).toFixed(1)
       console.log(`[server] TTS warmup complete (${warmupTime}s) - subsequent calls will be fast`)
     } catch (err) {
@@ -340,11 +341,6 @@ async function start() {
 
       setVoiceEmbedding(CLEETUS_WAV)
       console.log('[server] Voice reference path set for Discord processor')
-
-      const preambleCache = await import('./preamble-cache.js')
-      const refTextPath = CLEETUS_WAV.replace(/\.wav$/i, '.txt')
-      const refText = fs.existsSync(refTextPath) ? fs.readFileSync(refTextPath, 'utf8').trim() : null
-      preambleCache.warmup(CLEETUS_WAV, refText).catch(err => console.warn('[server] preamble warmup:', err.message))
 
       const cleetusCard = CLEETUS_WAV.replace(/\.wav$/i, '.json')
       if (fs.existsSync(cleetusCard)) {

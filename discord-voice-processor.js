@@ -200,13 +200,9 @@ export async function processUserAudio(pcmBuffer, sampleRate, userId, signal, us
   return resampled
 }
 
-const SENTENCE_END_CHARS = new Set(['.', '!', '?'])
-const SOFT_BREAK_CHARS = new Set([',', ';', ':', '—', '–'])
-const FIRST_CHUNK_MIN = 14
-const NEXT_CHUNK_MIN = 24
 const MAX_RESPONSE_CHARS = 280
 
-export async function processTranscript(rawText, confidence, userId, signal, username = null, onChunk = null, preambleText = null) {
+export async function processTranscript(rawText, confidence, userId, signal, username = null, onChunk = null) {
   const t0 = Date.now()
   const speaker = username || `user${String(userId).slice(-4)}`
   const tag = `uid=${userId} (${speaker})`
@@ -228,110 +224,42 @@ export async function processTranscript(rawText, confidence, userId, signal, use
 
   const sys = characterSystemPrompt || undefined
   const userMsg = buildUserMessage(userText)
-  console.log(`[pipe] ${tag} ▶ stream-gen hist=${recentHistory.length}${preambleText ? ` (audio-preamble="${preambleText.slice(0,30)}")` : ''}`)
   const refText = getVoiceReferenceText()
+
   const tGen = Date.now()
-
-  let pending = ''
-  let responseText = ''
-  const ttsJobs = []
-  let emitChain = Promise.resolve()
-  const allAudio = []
-  let firstTokenAt = null
-  let firstAudioAt = null
-  let stopRequested = false
-
-  const stripSpoken = (s) => s.replace(/^[\s"'`“”‘’]+|[\s"'`“”‘’]+$/g, '')
-
-  const flushSentence = (sent) => {
-    const piece = stripSpoken(sent)
-    if (!piece) return
-    responseText += (responseText ? ' ' : '') + piece
-    const tc = Date.now()
-    const collected = []
-    const sentenceDone = (async () => {
-      try {
-        let prevEmit = emitChain
-        const onStreamChunk = (chunkAudio, sr) => {
-          if (signal?.aborted || stopRequested) return
-          const resampled = resampleAudio(chunkAudio, sr || SAMPLE_RATE_TTS_FALLBACK, SAMPLE_RATE_DISCORD)
-          collected.push(resampled)
-          prevEmit = prevEmit.then(() => {
-            if (signal?.aborted || stopRequested) return
-            if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms`) }
-            if (onChunk) onChunk(resampled)
-            allAudio.push(resampled)
-          })
-          emitChain = prevEmit
-        }
-        await synthesizeStream(piece, refText ? voiceReferencePath : null, refText || null, onStreamChunk, signal)
-        console.log(`[pipe] ${tag} ✓ tts-stream ${Date.now()-tc}ms chunks=${collected.length} "${piece.slice(0,40)}"`)
-      } catch (err) {
-        console.error(`[pipe] ${tag} tts error:`, err.message)
-      }
-    })()
-    ttsJobs.push(sentenceDone)
-    emitChain = emitChain.then(() => sentenceDone)
-  }
-
-  const tryFlush = () => {
-    if (!pending) return
-    const minLen = allAudio.length === 0 && !firstAudioAt ? FIRST_CHUNK_MIN : NEXT_CHUNK_MIN
-    if (pending.length < minLen) return
-    let cut = -1
-    for (let i = pending.length - 1; i >= minLen - 1; i--) {
-      if (SENTENCE_END_CHARS.has(pending[i]) && (i + 1 === pending.length || pending[i+1] === ' ')) { cut = i + 1; break }
-    }
-    if (cut < 0) {
-      for (let i = pending.length - 1; i >= minLen - 1; i--) {
-        if (SOFT_BREAK_CHARS.has(pending[i]) && (i + 1 === pending.length || pending[i+1] === ' ')) { cut = i + 1; break }
-      }
-    }
-    if (cut < 0) return
-    flushSentence(pending.slice(0, cut))
-    pending = pending.slice(cut).trimStart()
-  }
-
   const speculative = consumeSpeculative(userId, userText)
-  try {
-    if (speculative) {
-      const specText = (await speculative) || ''
-      firstTokenAt = Date.now()
-      console.log(`[pipe] ${tag} ⚡ speculative-first-token ${firstTokenAt - t0}ms chars=${specText.length}`)
-      pending = specText.slice(0, MAX_RESPONSE_CHARS)
-      if (pending.length >= MAX_RESPONSE_CHARS) stopRequested = true
-      tryFlush()
-    } else {
-      for await (const tok of generateTokens(userMsg, sys, signal)) {
-        if (!firstTokenAt) { firstTokenAt = Date.now(); console.log(`[pipe] ${tag} ⚡ first-token ${firstTokenAt - t0}ms`) }
-        pending += tok
-        if (responseText.length + pending.length > MAX_RESPONSE_CHARS) { stopRequested = true; break }
-        tryFlush()
-        if (stopRequested) break
-      }
-    }
-  } catch (err) {
-    if (err.name !== 'AbortError') throw err
+  let responseText
+  if (speculative) {
+    responseText = ((await speculative) || '').trim().slice(0, MAX_RESPONSE_CHARS)
+    console.log(`[pipe] ${tag} ⚡ speculative-llm ${Date.now()-tGen}ms → "${responseText.slice(0,80)}"`)
+  } else {
+    responseText = (await generateLLM(userMsg, sys, signal) || '').trim().slice(0, MAX_RESPONSE_CHARS)
+    console.log(`[pipe] ${tag} ✓ llm ${Date.now()-tGen}ms → "${responseText.slice(0,80)}"`)
   }
-  const tail = pending.trim()
-  if (!stopRequested && tail) flushSentence(tail)
-  await emitChain
-
-  responseText = responseText.trim()
-  const genMs = Date.now() - tGen
-  console.log(`[pipe] ${tag} ✓ stream-gen total ${genMs}ms → "${responseText}"`)
   if (!responseText || signal?.aborted) return null
 
   recentHistory.push({ role: 'user', text: userText, username: speaker })
   recentHistory.push({ role: 'assistant', text: responseText })
   if (recentHistory.length > MAX_HISTORY * 2) recentHistory.splice(0, recentHistory.length - MAX_HISTORY * 2)
 
+  const tTts = Date.now()
+  const allAudio = []
+  let firstAudioAt = null
+  const handleChunk = (chunkAudio, sr) => {
+    if (signal?.aborted) return
+    const resampled = resampleAudio(chunkAudio, sr || SAMPLE_RATE_TTS_FALLBACK, SAMPLE_RATE_DISCORD)
+    if (!firstAudioAt) { firstAudioAt = Date.now(); console.log(`[pipe] ${tag} 🎵 first-audio ${firstAudioAt - t0}ms (tts=${firstAudioAt - tTts}ms)`) }
+    if (onChunk) onChunk(resampled)
+    allAudio.push(resampled)
+  }
+  await synthesizeStream(responseText, refText ? voiceReferencePath : null, refText || null, handleChunk, signal)
+  if (signal?.aborted) return null
+
   const totalLen = allAudio.reduce((s, a) => s + a.length, 0)
   const combined = new Float32Array(totalLen)
   let off = 0
   for (const a of allAudio) { combined.set(a, off); off += a.length }
-  const totalMs = Date.now() - t0
-  console.log(`[pipe] ${tag} ✅ complete ${totalMs}ms first-audio=${firstAudioAt ? firstAudioAt - t0 : '?'}ms chunks=${allAudio.length}`)
+  console.log(`[pipe] ${tag} ✅ complete ${Date.now()-t0}ms first-audio=${firstAudioAt ? firstAudioAt - t0 : '?'}ms chunks=${allAudio.length}`)
   combined._text = responseText
   return combined
 }

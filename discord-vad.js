@@ -1,7 +1,6 @@
 import { processTranscript, noteBotSpeech, noteBotInterrupted, startSpeculativeGenerate } from './discord-voice-processor.js'
 import { pushAudioFrame, flushAudio } from 'dispipe/voice'
 import { pushFrame, onStable, onPartial } from './whisper-stream.js'
-import { pick as pickPreamble, isReady as preambleReady } from './preamble-cache.js'
 
 const SAMPLE_RATE = 48000
 const INTERRUPT_THRESHOLD = 0.05
@@ -70,15 +69,6 @@ async function handleUtterance(userId, text, confidence) {
   const entry = { userId, startTime: Date.now() }
   _processingQueue.push(entry)
 
-  const preamblePick = preambleReady() ? pickPreamble('thinking') : null
-  if (preamblePick) {
-    const preStereo = new Float32Array(preamblePick.audio.length * 2)
-    for (let i = 0; i < preamblePick.audio.length; i++) { preStereo[i * 2] = preamblePick.audio[i]; preStereo[i * 2 + 1] = preamblePick.audio[i] }
-    const preDurMs = (preamblePick.audio.length / SAMPLE_RATE) * 1000
-    _botSpeakingUntil = Date.now() + preDurMs + BOT_SPEAK_TAIL_MS
-    pushAudioFrame(preStereo)
-    console.log(`[vad] ⚡ preamble (immediate) "${preamblePick.text}" (${preDurMs.toFixed(0)}ms)`)
-  }
   try {
     const username = _usernameResolver(userId)
     let firstChunkAt = null
@@ -92,8 +82,7 @@ async function handleUtterance(userId, text, confidence) {
       pushAudioFrame(stereo)
       if (!firstChunkAt) { firstChunkAt = Date.now(); console.log(`[vad] 🎵 first-chunk uid=${userId} TTFA=${firstChunkAt-entry.startTime}ms`) }
     }
-    const preambleHintText = preamblePick ? preamblePick.text : null
-    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk, preambleHintText)
+    const monoOut = await processTranscript(text, confidence, userId, abort.signal, username, onChunk)
     if (!monoOut || abort.signal.aborted) { console.log(`[vad] uid=${userId} no output (aborted=${abort.signal.aborted})`); return }
     const totalDurMs = (monoOut.length / SAMPLE_RATE) * 1000
     noteBotSpeech(monoOut._text || '[response]', totalDurMs)
