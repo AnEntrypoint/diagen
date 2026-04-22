@@ -1,5 +1,11 @@
 
 ## [unreleased]
+- feat: replace utterance-triggered processTranscript with 5-state speak-gate machine (LISTENING/WAITING/GATING/ANSWERING/SPEAKING). Whisper words debounce 1s into a grammar-constrained YES/NO gating LLM call; YES fires the answering LLM then streams TTS. Any whisper during a post-LISTENING stage aborts back to WAITING. Bot history written only when at least one TTS chunk played.
+- new: speak-gate.js (188L, dispatch-table state transitions, per-stage AbortController, env-tunable timeouts)
+- chore: discord-vad.js rewritten — RMS-gates whisper feed at pushFrame (dispipe has no unsubscribe), drops handleUtterance/processTranscript/preamble/speculative/interruption-resume plumbing
+- chore: discord-voice-processor.js shrunk to 67L — config-only, forwards setVoiceEmbedding/setCharacterCard to speak-gate
+- new: llm-llamacpp.js exposes buildGrammar() so consumers share the model's llama instance (mismatched instances throw)
+- new: GET /debug/speak-gate observability endpoint
 - feat: swap Pocket TTS for Qwen3-TTS-12Hz-0.6B via faster-qwen3-tts (CUDA-graph streaming, ~700-850ms first chunk, ~1.3x RT warm)
 - new: qwen3-tts-bridge.js + qwen3_tts_server.py (Node↔Python subprocess, identical synthesize/synthesizeStream contract to prior bridges)
 - chore: delete pocket-tts-bridge.js, pocket_tts_server.py, omnivoice-tts-bridge.js, omnivoice_tts_server.py

@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getLlama, LlamaChatSession } from 'node-llama-cpp'
+import { getLlama, LlamaChatSession, LlamaGrammar } from 'node-llama-cpp'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_LLM_DIR = path.join(__dirname, 'models', 'llm')
@@ -30,6 +30,11 @@ let modelPromise = null
 async function getLlamaInstance() {
   if (!llamaPromise) llamaPromise = getLlama()
   return llamaPromise
+}
+
+export async function buildGrammar(grammarString) {
+  const llama = await getLlamaInstance()
+  return new LlamaGrammar(llama, { grammar: grammarString })
 }
 
 async function getModel() {
@@ -70,7 +75,7 @@ async function acquireSession(system) {
 
 const GEN_OPTS = { temperature: 0.9, topP: 0.92, maxTokens: 300, repeatPenalty: { penalty: 1.25 }, customStopTriggers: ['\n\n'] }
 
-export async function generate(prompt, system = 'You are a helpful assistant. Be concise.', signal) {
+export async function generate(prompt, system = 'You are a helpful assistant. Be concise.', signal, extraOpts = {}) {
   const t0 = Date.now()
   const { session, release } = await acquireSession(system)
   let released = false
@@ -78,7 +83,7 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
   const onAbort = () => { console.log('[llamacpp] abort → early release'); doRelease() }
   signal?.addEventListener?.('abort', onAbort, { once: true })
   try {
-    const out = await session.prompt(prompt, { ...GEN_OPTS, signal })
+    const out = await session.prompt(prompt, { ...GEN_OPTS, ...extraOpts, signal })
     console.log(`[llamacpp] gen ${Date.now()-t0}ms chars=${out.length}`)
     return out
   } catch (err) {

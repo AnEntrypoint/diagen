@@ -56,11 +56,49 @@ import assert from 'node:assert/strict'
   assert.ok(Math.abs(out22to48[0] - 0.5) < 0.001, 'sample value preserved')
 }
 
-console.log('test.js: all assertions passed')
-
 {
   const closeCode4017 = 4017
   const closeCode4006 = 4006
   assert.ok(closeCode4017 === 4017, '4017 triggers gateway reconnect branch')
   assert.ok(closeCode4006 !== 4017, 'non-4017 takes delay branch')
 }
+
+{
+  process.env.GATE_DEBOUNCE_MS = '60000'
+  const sg = await import('./speak-gate.js')
+  let snap = sg.getDebugSnapshot()
+  assert.equal(snap.state, 'LISTENING', 'initial state is LISTENING')
+  assert.equal(snap.history.length, 0, 'history empty initially')
+
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '[BLANK_AUDIO]' })
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '*music*' })
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '   ' })
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '' })
+  snap = sg.getDebugSnapshot()
+  assert.equal(snap.state, 'LISTENING', 'sentinels do not advance state')
+  assert.equal(snap.history.length, 0, 'sentinels do not enter history')
+
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: 'hello there' })
+  snap = sg.getDebugSnapshot()
+  assert.equal(snap.state, 'WAITING', 'first word arms WAITING')
+  assert.equal(snap.debounceArmed, true, 'debounce armed')
+  assert.equal(snap.history.length, 1, 'one history entry')
+  assert.equal(snap.history[0].username, 'alice', 'username tagged')
+
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: 'hello there friend' })
+  snap = sg.getDebugSnapshot()
+  assert.equal(snap.history.length, 1, 'consecutive same-user updates collapse')
+  assert.equal(snap.history[0].text, 'hello there friend', 'last text wins')
+
+  sg.noteWhisperWord({ userId: 'u2', username: 'bob', text: 'hey too' })
+  snap = sg.getDebugSnapshot()
+  assert.equal(snap.history.length, 2, 'different speaker adds entry')
+  assert.equal(snap.activeSpeakers.length, 2, 'two active speakers tracked')
+
+  sg.clearHistory()
+  snap = sg.getDebugSnapshot()
+  assert.equal(snap.history.length, 0, 'clearHistory empties history')
+}
+
+console.log('test.js: all assertions passed')
+process.exit(0)

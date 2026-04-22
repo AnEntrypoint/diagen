@@ -258,6 +258,18 @@ app.post('/api/discord/message', async (req, res) => {
   }
 })
 
+app.get('/debug/speak-gate', async (req, res) => {
+  try {
+    const sg = await import('./speak-gate.js')
+    const vad = await import('./discord-vad.js').catch(() => null)
+    const snap = sg.getDebugSnapshot()
+    if (vad?.getActiveSpeakers) snap.vadSpeakers = vad.getActiveSpeakers()
+    res.json(snap)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.get('/debug/discord', (req, res) => {
   if (!getDebugState) return res.status(503).json({ error: 'Discord not enabled' })
   try {

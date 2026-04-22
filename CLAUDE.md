@@ -172,8 +172,7 @@ The subprocess server prints model warmup status to stdout; the server permanent
 
 ### Integration Points
 
-- **Discord voice pipeline** (`discord-voice-processor.js`): transcribe user audio → generate text → `synthesizeStream` → resample 24k→48k → `pushAudioFrame`
-- **Preamble cache** (`preamble-cache.js`): pre-renders short interjections at startup for instant playback
+- **Discord voice pipeline** (`speak-gate.js` SPEAKING stage): pipes the answering LLM output through `synthesizeStream`, sink-pushes resampled stereo via `pushAudioFrame`
 - **Web demo API** (`/api/generate` in `server.js`): one-shot `synthesize` for facial animation flow
 
 ### Switching back to a different engine
@@ -247,7 +246,7 @@ Audio output from discord-voice-processor.js is sent via `pushAudioFrame(f32)` f
 
 Sends Float32Array mono audio to active Discord voice connection. dispipe handles internal Opus encoding and UDP transmission.
 
-**Call site**: discord-vad.js handleUtterance(), line 51
+**Call site**: `speak-gate.js` audio sink (set via `setAudioSink()` from `discord-vad.init()`), upmixed mono→stereo before push.
 
 ### Observability
 
@@ -282,66 +281,75 @@ This permanent, queryable endpoint provides complete visibility into:
 
 Query via curl or monitoring tools: `curl http://localhost:8080/debug/discord`
 
-### Voice Audio Processing Pipeline
+### Speak-Gate State Machine — Voice Orchestration
 
-**Module**: `discord-voice-processor.js` — Complete end-to-end audio processing pipeline for Discord voice interactions.
+**Module**: `speak-gate.js` — single shared 5-state machine driving the Discord voice loop. Replaces the previous utterance-triggered `processTranscript` flow.
 
-**Pipeline Flow**:
+**States**:
 ```
-48kHz PCM Input → Transcribe → Generate → Synthesize → Resample → 48kHz Float32 Output
-     (16-bit)       (STT)      (text)      (24kHz)      (24→48k)   (dispipe expects)
+LISTENING ─[whisper word]→ WAITING (1s debounce)
+WAITING   ─[whisper word]→ WAITING (re-arm 1s)
+WAITING   ─[1s silent]→    GATING
+GATING    ─[whisper word]→ abort, → WAITING
+GATING    ─[NO]→           LISTENING
+GATING    ─[YES]→          ANSWERING
+ANSWERING ─[whisper word]→ abort, → WAITING
+ANSWERING ─[done]→         SPEAKING
+SPEAKING  ─[whisper word]→ abort, history(partial), → WAITING
+SPEAKING  ─[done]→         history(full), → LISTENING
 ```
 
-**API**:
+**Two-stage LLM**:
+1. **GATING** — single grammar-constrained call returning `YES` or `NO`. Grammar `root ::= "YES" | "NO"` built via `buildGrammar()` from `llm-llamacpp.js` (must use the same `getLlama()` instance that loaded the model — `LlamaGrammar` instance must match the session's instance, otherwise `node-llama-cpp` throws). The gating prompt asks: should the bot speak now?
+2. **ANSWERING** — full LLM call only fired when GATING returned YES, then piped into `synthesizeStream` from `qwen3-tts-bridge.js`.
+
+**Per-stage AbortController + timeouts** (env-tunable): `GATE_TIMEOUT_GATING_MS=5000`, `GATE_TIMEOUT_ANSWER_MS=15000`, `GATE_TIMEOUT_SPEAKING_MS=30000`. A whisper word arriving during any post-LISTENING stage aborts the in-flight stage and snaps to WAITING.
+
+**History accounting**:
+- User words: each whisper update from a speaker collapses into the last entry if it's the same speaker, otherwise appends. Tagged `[username]`.
+- Bot speech: written **only if at least one TTS chunk reached the audio sink**. On clean SPEAKING completion, the full text is committed; on whisper-mid-speak abort, an estimated partial (proportional to chunks played) is committed. Abort before any audio = nothing in history.
+
+**Inputs**:
 ```javascript
-import { processUserAudio, setVoiceEmbedding } from './discord-voice-processor.js';
+import { noteWhisperWord, setRefVoice, setCharacterCardPrompt, setAudioSink, getDebugSnapshot } from './speak-gate.js'
 
-// Initialize with voice embedding (call once after loading voice)
-setVoiceEmbedding(voiceReferencePath);
-
-// Process user audio through complete pipeline
-const pcmOutput = await processUserAudio(pcmBuffer, 48000, userId);
-// Returns: Float32Array of 48kHz mono audio, ready for pushAudioFrame(pcmOutput)
+setAudioSink((monoF32, _text) => { /* upmix mono→stereo, pushAudioFrame */ })
+setRefVoice('/path/to/voices/cleetus.wav', '<transcript of cleetus.txt>')
+setCharacterCardPrompt('You are Cleetus...')
+noteWhisperWord({ userId, username, text })
 ```
 
-**Step Details**:
+`noteWhisperWord` filters wordless / sentinel inputs (`[BLANK_AUDIO]`, `*music*`, whitespace) before re-arming the debounce timer.
 
-1. **Transcribe** (`discord-whisper.js`): Converts 48kHz PCM to text using Whisper STT
-   - Input: Buffer | Uint8Array, 48kHz mono 16-bit PCM
-   - Output: { text: string, confidence: number }
-   - Handles empty/silent audio gracefully
+### Discord VAD — RMS Gate, Not Subscription Management
 
-2. **Generate**: Template-based response generation from user text
-   - Handles silence detection (returns default message if no speech)
-   - Extensible for future LLM integration
+**Module**: `discord-vad.js` — receives stereo PCM frames from `dispipe/voice` per active speaker, downmixes to mono, applies AGC (`TARGET_RMS=0.15`), and **gates the whisper feed by RMS** (`VAD_ACTIVE_RMS=0.005` — frames below this floor are not pushed to whisper-stream). dispipe v1.0.1 has no `unsubscribeFromSpeaker`, so the gate is at the data-receiving callback, not at subscription level.
 
-3. **Synthesize** (`ttsOnnx`): Text-to-speech synthesis at 24kHz
-   - Input: Response text, voice embedding tensor
-   - Output: Float32Array at 24kHz
-   - Uses server-loaded voice embedding for voice cloning
+`onPartial` and `onStable` callbacks from `whisper-stream.js` both feed `speak-gate.noteWhisperWord` — partials are how we detect a speaker is still mid-utterance.
 
-4. **Resample** (`server-utils.mjs`): Linear interpolation resampling from 24kHz to 48kHz
-   - Ensures Discord voice channel compatibility
-   - Preserves audio fidelity through smooth interpolation
-   - Returns Float32Array at 48kHz
+The bot's own TTS audio is masked from re-entering whisper via `_botSpeakingUntil` (set when the audio sink writes a chunk; subsequent inbound frames are skipped during that window).
 
-Output ready for pushAudioFrame(): Float32Array mono 48kHz. No further conversion needed.
+### Whisper Stream — Warm Worker Pool, Per-User Sessions
 
-**Error Handling**:
-- All errors include context: step name, userId, input size/format
-- Examples: `step=input userId=123`, `step=synthesize userId=456: <error details>`
-- Propagates errors loudly (no silent fallbacks)
+**Module**: `whisper-stream.js` — single warm `@xenova/transformers` Whisper pipeline shared across all per-user sessions. Sessions are a `Map` keyed by userId; each holds the rolling PCM buffer, debounced re-transcription scheduling (200ms), and stability detection (350ms). **No spawn/teardown** of workers per speaker — only `clear(userId)` to drop accumulated audio.
 
-**Integration Points**:
-- `discord-handler.js`: Calls processUserAudio in onUserAudio callback (async)
-- `server.js`: Calls setVoiceEmbedding(voiceEmbedding) during startup to initialize
-- Voice embedding loaded from voices/cleetus.wav (or configured voice file)
+### Observability — `/debug/speak-gate`
 
-**Constraints**:
-- Module is 135 lines, under 200-line limit
-- Zero magic numbers (uses SAMPLE_RATE_DISCORD=48000, SAMPLE_RATE_TTS=24000 constants)
-- Requires voice embedding to be set before processing audio
-- TTS models must be loaded (done via ttsOnnx.loadModels() in server.js)
+`GET /debug/speak-gate` returns a live snapshot:
+```json
+{
+  "state": "LISTENING|WAITING|GATING|ANSWERING|SPEAKING",
+  "msInState": 1234,
+  "debounceArmed": true,
+  "msUntilTick": 800,
+  "activeAbortReason": "in-flight" | null,
+  "lastDecision": { "decision": "YES", "at": 1700000000000 },
+  "history": [...],
+  "activeSpeakers": [{ "userId", "username", "lastWordAt", "lastText" }],
+  "vadSpeakers": [{ "userId", "gain", "lastActiveAt", "skipped" }],
+  "metrics": { "gateYes", "gateNo", "abortsByStage", "timeouts", "spoken" }
+}
+```
 
 ### Dependencies
 
@@ -358,17 +366,15 @@ Why: Discord voice mix is stereo. Whisper requires mono 16kHz.
 
 **pushAudioFrame expects stereo-interleaved Float32Array at 48kHz:**
 - Input: Float32Array [-1.0 to 1.0], 48kHz, stereo [L,R,L,R,...] — NOT mono
-- processUserAudio returns mono — upmix before calling: `const s=new Float32Array(mono.length*2); for(let i=0;i<mono.length;i++){s[i*2]=mono[i];s[i*2+1]=mono[i]}`
-- Called in discord-vad.js handleUtterance() after processUserAudio
+- speak-gate's audio sink (set in `discord-vad.init`) upmixes mono→stereo before push: `const s=new Float32Array(mono.length*2); for(let i=0;i<mono.length;i++){s[i*2]=mono[i];s[i*2+1]=mono[i]}`
 - dispipe encoder: channels=2, FRAME=960*2*2 bytes
 
 Why: Opus encoder in dispipe/voice is stereo. Mono input → half-speed/wrong-pitch audio.
 
-**VAD (Voice Activity Detection) constants** (discord-vad.js):
-- `SILENCE_THRESHOLD = 0.01` — RMS level threshold for speech/silence boundary
-- `SILENCE_DURATION_MS = 1500` — Flush buffer after 1.5s of silence
-- `MIN_UTTERANCE_MS = 500` — Reject utterances shorter than 500ms
-- `MAX_UTTERANCE_MS = 30000` — Safety limit: max 30s per utterance
+**VAD constants** (discord-vad.js):
+- `VAD_ACTIVE_RMS = 0.005` (env-tunable) — frames below this floor are not pushed to whisper-stream (saves transcription on silence/background noise)
+- `TARGET_RMS = 0.15`, `MAX_GAIN = 25`, `MIN_GAIN = 1`, `GAIN_ATTACK = 0.25` — automatic gain control toward target loudness
+- `BOT_SPEAK_TAIL_MS = 250` — extra dead-time after bot's last audio chunk to prevent self-pickup
 
 Why: Prevents sending empty audio and excessive fragmentation. Constants tuned empirically for natural speech.
 
