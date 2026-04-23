@@ -3,7 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
-import { encodeWAV, resampleAudio, buildAfan } from './server-utils.mjs'
+import { encodeWAV, buildAfan } from './server-utils.mjs'
+import { LipsyncSDKNode, estimateWordTimings, trackToFrames } from '../a2f/lipsync-sdk-node.mjs'
 import { synthesize as synthesizeTTS } from './qwen3-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import os from 'os'
@@ -91,20 +92,14 @@ app.get('/demo/voices/manifest.json', (req, res) => {
 })
 app.use('/demo/voices', express.static(VOICES_DIR))
 app.use('/demo', express.static(DEMO_DIR))
-const SAMPLE_RATE = 24000, A2F_SAMPLE_RATE = 16000
-let a2f = null, voiceEmbedding = null
+const SAMPLE_RATE = 24000
+let lipsync = null, voiceEmbedding = null
 
-async function loadA2F() {
-  if (a2f) return a2f
-  const ort = await getOrt()
-  const { Audio2FaceCore } = await import('./audio2afan_core.mjs')
-  const audio2afanDir = path.join(__dirname, 'models', 'audio2afan')
-  a2f = new Audio2FaceCore({ ort })
-  await a2f.loadConfigFile(path.join(audio2afanDir, 'config.json'))
-  await a2f.loadModel(path.join(audio2afanDir, 'model.onnx'))
-  await a2f.loadSolveData(audio2afanDir)
-  console.log('[a2f] Loaded')
-  return a2f
+function loadLipsync() {
+  if (lipsync) return lipsync
+  lipsync = new LipsyncSDKNode({ langs: ['en'] })
+  console.log('[lipsync] Ready')
+  return lipsync
 }
 async function loadVoiceEmbedding() {
   if (voiceEmbedding) return voiceEmbedding
@@ -120,63 +115,22 @@ app.post('/api/generate', async (req, res) => {
   try {
     const { text } = req.body
     if (!text) return res.status(400).json({ error: 'text required' })
-    await loadA2F()
+    const sdk = loadLipsync()
     const voiceEmb = await loadVoiceEmbedding()
     if (!voiceEmb) return res.status(500).json({ error: 'Voice embedding not available' })
     const startTime = performance.now()
 
-    const audioFloat = await synthesizeTTS(text, voiceEmb, 'reference speech')
-    const [audioWav, audio16k] = await Promise.all([
-      Promise.resolve(encodeWAV(audioFloat, SAMPLE_RATE)),
-      Promise.resolve(resampleAudio(audioFloat, SAMPLE_RATE, A2F_SAMPLE_RATE))
-    ])
+    const { audio: audioFloat, sampleRate } = await synthesizeTTS(text, voiceEmb, 'reference speech')
     const fps = 30
-    const stride = Math.round(A2F_SAMPLE_RATE / fps)
-    const bufferLen = a2f.bufferLen
-    const bufferOfs = a2f.bufferOfs
-    const predictionDelay = a2f.faceParams?.prediction_delay || 0
-
-    const results = []
-    let lastBs = null
-    for (let offset = 0; offset + bufferLen <= audio16k.length; offset += stride) {
-      const chunk = audio16k.slice(offset, offset + bufferLen)
-      const result = await a2f.runInference(chunk)
-      if (result.blendshapes && lastBs) {
-        result.blendshapes = a2f.smoothBlendshapes(lastBs, result.blendshapes)
-      }
-      lastBs = result.blendshapes
-      results.push({
-        time: (offset + bufferOfs) / A2F_SAMPLE_RATE + predictionDelay,
-        blendshapes: result.blendshapes
-      })
-    }
-    const audioDuration = audioFloat.length / SAMPLE_RATE
-    const targetNumFrames = Math.ceil(audioDuration * fps)
-    const frames = new Array(targetNumFrames)
-    let cursor = 0
-    for (let frameIdx = 0; frameIdx < targetNumFrames; frameIdx++) {
-      const frameTime = frameIdx / fps
-      const frame = new Float32Array(52)
-      if (results.length === 0 || frameTime < results[0].time) { frames[frameIdx] = frame; continue }
-      while (cursor < results.length - 1 && results[cursor + 1].time <= frameTime) cursor++
-
-      const curr = results[cursor]
-      const next = results[Math.min(cursor + 1, results.length - 1)]
-      const dt = next.time - curr.time
-      const t = dt > 0 ? Math.max(0, Math.min(1, (frameTime - curr.time) / dt)) : 0
-
-      for (let k = 0; k < 52; k++) {
-        frame[k] = curr.blendshapes[k].value + (next.blendshapes[k].value - curr.blendshapes[k].value) * t
-      }
-      frames[frameIdx] = frame
-    }
-
+    const durationMs = (audioFloat.length / (sampleRate || SAMPLE_RATE)) * 1000
+    const audioWav = encodeWAV(audioFloat, sampleRate || SAMPLE_RATE)
+    const frames = sdk.processText(text, durationMs, { fps })
     const animBuffer = buildAfan(frames, fps)
-    const duration = audioFloat.length / SAMPLE_RATE
+    const duration = durationMs / 1000
     const genTime = ((performance.now() - startTime) / 1000).toFixed(1)
     const rtfx = (duration / parseFloat(genTime)).toFixed(1)
 
-    console.log(`[generate] "${text.slice(0, 30)}..." - ${duration.toFixed(1)}s in ${genTime}s (${rtfx}x realtime)`)
+    console.log(`[generate] "${text.slice(0, 30)}..." - ${duration.toFixed(1)}s in ${genTime}s (${rtfx}x realtime) [lipsync]`)
     res.json({
       audio: audioWav.toString('base64'),
       animation: animBuffer.toString('base64'),
