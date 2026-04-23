@@ -340,7 +340,7 @@ setCharacterCardPrompt('You are Cleetus...')
 noteWhisperWord({ userId, username, text })
 ```
 
-`noteWhisperWord` filters wordless / sentinel inputs (`[BLANK_AUDIO]`, `*music*`, whitespace) before re-arming the debounce timer.
+`noteWhisperWord` filters wordless / sentinel inputs (`[BLANK_AUDIO]`, `*music*`, `(upbeat music)`, whitespace) before re-arming the debounce timer. Sentinels with all three bracket styles — `[...]`, `*...*`, `(...)` — are caught by both `whisper-stream.js:isSentinel()` and `speak-gate.js:isWordlessOrSentinel()`.
 
 ### Discord VAD — RMS Gate, Not Subscription Management
 
