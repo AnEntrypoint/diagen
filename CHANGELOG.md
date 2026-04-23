@@ -1,5 +1,6 @@
 
 ## [unreleased]
+- fix: whisper-stream.js isSentinel() now filters parenthesized sentinel outputs like "(upbeat music)" alongside [...] and *...* patterns. Prevents sentinel annotations from triggering speak-gate state transitions.
 - feat: replace utterance-triggered processTranscript with 5-state speak-gate machine (LISTENING/WAITING/GATING/ANSWERING/SPEAKING). Whisper words debounce 1s into a grammar-constrained YES/NO gating LLM call; YES fires the answering LLM then streams TTS. Any whisper during a post-LISTENING stage aborts back to WAITING. Bot history written only when at least one TTS chunk played.
 - new: speak-gate.js (188L, dispatch-table state transitions, per-stage AbortController, env-tunable timeouts)
 - chore: discord-vad.js rewritten — RMS-gates whisper feed at pushFrame (dispipe has no unsubscribe), drops handleUtterance/processTranscript/preamble/speculative/interruption-resume plumbing
