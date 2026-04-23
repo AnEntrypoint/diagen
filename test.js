@@ -72,6 +72,8 @@ import assert from 'node:assert/strict'
 
   sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '[BLANK_AUDIO]' })
   sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '*music*' })
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '(upbeat music)' })
+  sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '[MUSIC PLAYING]' })
   sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '   ' })
   sg.noteWhisperWord({ userId: 'u1', username: 'alice', text: '' })
   snap = sg.getDebugSnapshot()

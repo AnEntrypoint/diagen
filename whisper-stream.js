@@ -38,8 +38,8 @@ function isSentinel(text) {
     while (i < t.length && t.charAt(i) === ' ') i++
     if (i >= t.length) break
     const open = t.charAt(i)
-    if (open !== '[' && open !== '*') return false
-    const close = open === '[' ? ']' : '*'
+    if (open !== '[' && open !== '*' && open !== '(') return false
+    const close = open === '[' ? ']' : open === '(' ? ')' : '*'
     const end = t.indexOf(close, i + 1)
     if (end < 0) return false
     i = end + 1
