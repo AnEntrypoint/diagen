@@ -1,4 +1,4 @@
-import { pipeline, env } from '@xenova/transformers/src/transformers.js'
+import { pipeline, env } from '@huggingface/transformers'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -16,7 +16,7 @@ async function initPipeline() {
 
   pipelineInitPromise = (async () => {
     try {
-      whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { quantized: true })
+      whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', { dtype: 'q8' })
       return whisperPipeline
     } catch (err) {
       pipelineInitPromise = null
