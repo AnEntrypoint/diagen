@@ -1,202 +1,121 @@
 /* ============================================================
-   247420 DESIGN SYSTEM — colors + type
-   we fart in its general direction.
+   Design tokens — brand palette + type scale + motion
+   Loads before any consumer rule; all var(--*) refs resolve.
    ============================================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&family=Space+Grotesk:wght@400;500;600;700&family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Narrow:wght@400;500;600;700&display=swap');
-
 :root {
-  /* --- Neutrals --- */
-  --paper:      #EFE9DD;   /* warm off-white, zine cream */
-  --paper-2:    #E4DDCA;   /* one step warmer for blocks */
-  --ink:        #2A251D;   /* softened near-black — warm, not harsh */
-  --ink-2:      #3E382E;   /* secondary ink */
-  --ink-3:      #7A7567;   /* tertiary / metadata */
-  --rule:       #2A251D;   /* default rule */
-  --rule-inv:   #EFE9DD;
-  --cream-3:    #DCD4BE;   /* deeper cream, for hover / chips */
-  --plum-tint:  #EFE3EF;   /* pale purple-tinted cream */
-  --green-tint: #E5EDD8;   /* pale green-tinted cream */
-  --peach-tint: #F5E1D3;   /* pale peach-tinted cream */
+  --paper:        #EFE9DD;
+  --ink:          #0B0B09;
+  --acid:         #B8FF00;
+  --link:         #1F4DFF;
+  --warn:         #FF3B1F;
+  --live:         #00A86B;
 
-  /* --- Lore pair — the 247420 palette proper --- */
-  --green:      #247420;   /* marijuana green. 247420. primary accent. */
-  --green-fg:   #EFE9DD;   /* fg on green */
-  --green-2:    #3A9A34;   /* brighter, for mono-on-paper highlights */
-  --green-deep: #133F10;   /* deeper, for mono-on-green highlights */
-  --purple:     #420247;   /* marijuana purple. 420247. secondary accent. */
-  --purple-fg:  #EFE9DD;   /* fg on purple */
-  --purple-2:   #7F18A4;   /* brighter, mono-on-paper */
-  --purple-deep:#28002B;   /* deeper, mono-on-purple */
+  --green:        #247420;
+  --green-2:      #92CEAC;
+  --green-deep:   #1c5a19;
+  --green-fg:     #FFFFFF;
+  --purple:       #420247;
+  --purple-fg:    #FFFFFF;
+  --mascot:       #E84B8A;
+  --mascot-fg:    #FFFFFF;
+  --sun:          #FFD100;
 
-  /* --- Mascot family — pink/magenta/mauve --- */
-  --mascot:     #E84B8A;   /* mascot magenta, wild-card */
-  --mascot-fg:  #0B0B09;
-  --mascot-hot: #FF3CA7;   /* hotter pop */
-  --mascot-mauve: #B771A0; /* muted / ambiguous */
+  --ff-display:   'Archivo Black', 'Archivo', system-ui, sans-serif;
+  --ff-mono:      'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ff-prose:     'Instrument Serif', Georgia, serif;
 
-  /* --- Supporting signals --- */
-  --sun:        #F5C344;   /* warm yellow — rare highlight, not "acid" */
-  --flame:      #FF5A1F;   /* orange — warning / attention */
-  --sky:        #3A6EFF;   /* blue — long-form link */
-  --warn:       #E0241A;   /* destructive / error red */
-  --live:       var(--green);   /* success / up */
+  --fs-hero:      120px;
+  --fs-h1:        64px;
+  --fs-h2:        32px;
+  --lh-tight:     1.05;
+  --lh-snug:      1.2;
+  --tr-tight:     -0.02em;
 
-  /* Canonical swatch (used for tags, inline highlights) */
-  --canon-1: var(--green);
-  --canon-2: var(--purple);
-  --canon-3: var(--mascot);
-  --canon-4: var(--sun);
-  --canon-5: var(--flame);
-  --canon-6: var(--sky);
+  --dur-snap:     80ms;
+  --dur-base:     160ms;
+  --ease:         cubic-bezier(0.2, 0, 0, 1);
 
-  /* --- Surfaces (semantic) --- */
-  --bg:         var(--paper);
-  --bg-2:       var(--paper-2);
-  --fg:         var(--ink);
-  --fg-2:       var(--ink-2);
-  --fg-3:       var(--ink-3);
-  --border:     var(--rule);
-  --accent:     var(--green);
-  --accent-fg:  var(--green-fg);
-  --accent-2:   var(--purple);
-  --accent-2-fg:var(--purple-fg);
-  --accent-wild:var(--mascot);
-  --link:       var(--sky);
-  --error:      var(--warn);
+  --surface-2:    rgba(0,0,0,0.04);
+  --surface-ink-2: rgba(255,255,255,0.06);
 
-  /* Mono-on-surface canonicals (for colorful mono treatment) */
-  --mono-1:     var(--green-2);   /* green-ish on paper, green-2 on ink */
-  --mono-2:     var(--purple-2);
-  --mono-3:     var(--mascot);
-  --mono-4:     var(--sun);
-  --mono-5:     var(--flame);
-  --mono-6:     var(--sky);
+  --r-1:          0;
+  --r-2:          0;
+  --r-3:          0;
+  --r-pill:       9999px;
 
-  /* --- Type families (no serifs, ever) --- */
-  --ff-display: 'Archivo', 'Archivo Narrow', system-ui, -apple-system, sans-serif;
-  --ff-sans:    'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --ff-body:    'Space Grotesk', system-ui, -apple-system, sans-serif;
-  --ff-mono:    'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
-  /* legacy alias — never a serif. */
-  --ff-serif:   var(--ff-body);
+  /* Extended brand palette */
+  --flame:        #FF5C1A;
+  --sky:          #3B82F6;
 
-  /* --- Type scale (tight, opinionated) --- */
-  --fs-micro:   10px;
-  --fs-tiny:    11px;
-  --fs-xs:      12px;
-  --fs-sm:      14px;
-  --fs-body:    16px;
-  --fs-lg:      18px;
-  --fs-h4:      22px;
-  --fs-h3:      28px;
-  --fs-h2:      44px;
-  --fs-h1:      72px;
-  --fs-hero:   128px;
+  /* Foreground / background aliases — resolved after panel tokens are set;
+     these are reset below once panel tokens exist, but raw defaults here
+     ensure no unsatisfied var() at parse time if panel tokens are absent. */
+  --fg:           #0B0B09;
+  --fg-3:         #6d675b;
+  --bg:           #EFE9DD;
+  --bg-2:         #ece5d8;
 
-  /* --- Line heights --- */
-  --lh-tight:   1.02;
-  --lh-snug:    1.15;
-  --lh-base:    1.5;
-  --lh-long:    1.65;
+  /* Colorful-mono palette — canonical hue per slot */
+  --mono-1:       var(--green);
+  --mono-2:       var(--purple);
+  --mono-3:       var(--mascot);
+  --mono-4:       var(--sun);
+  --mono-5:       var(--flame);
+  --mono-6:       var(--sky);
 
-  /* --- Letter spacing --- */
-  --tr-caps:    0.08em;
-  --tr-label:   0.14em;
-  --tr-tight:  -0.02em;
-  --tr-wide:    0.24em;   /* billboard headlines */
+  /* Spacing scale (4px base) */
+  --space-1:      4px;
+  --space-2:      8px;
+  --space-3:      12px;
+  --space-4:      16px;
+  --space-5:      24px;
+  --space-6:      32px;
+  --space-7:      48px;
+  --space-8:      64px;
 
-  /* --- Spacing (8pt) --- */
-  --space-0: 0;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --space-5: 32px;
-  --space-6: 48px;
-  --space-7: 64px;
-  --space-8: 96px;
-  --space-9: 128px;
+  /* Border widths */
+  --bw-hair:      1px;
+  --bw-rule:      2px;
 
-  /* --- Borders (no hairlines; everything load-bearing is 2px+) --- */
-  --bw-hair:    2px;
-  --bw-rule:    4px;
-  --bw-chunk:   6px;
+  /* Measure */
+  --measure:      72ch;
 
-  /* --- Radii (rounder, friendlier) --- */
-  --r-1: 6px;   /* chips, inputs, stamps */
-  --r-2: 10px;  /* buttons, rows */
-  --r-3: 16px;  /* cards, blocks */
-  --r-4: 24px;  /* hero surfaces */
-  --r-pill: 999px;
+  /* Extended type scale */
+  --fs-body:      13px;
+  --fs-lg:        14px;
+  --fs-sm:        12px;
+  --fs-xs:        11px;
+  --fs-tiny:      11px;
+  --fs-micro:     9px;
+  --fs-h3:        14px;
+  --fs-h4:        13px;
 
-  /* --- Motion --- */
-  --dur-snap:   80ms;
-  --dur-base:  160ms;
-  --dur-slow:  240ms;
-  --ease:       cubic-bezier(0.2, 0, 0, 1);
+  /* Extended line heights */
+  --lh-base:      1.5;
+  --lh-long:      1.6;
 
-  /* --- Z-index --- */
-  --z-header:  100;
-  --z-overlay: 1000;
+  /* Extended letter spacing */
+  --tr-label:     0.08em;
+  --tr-caps:      0.05em;
 
-  /* --- Content measure --- */
-  --measure:   72ch;
+  /* Font body alias */
+  --ff-body:      var(--ff-prose);
 }
 
-/* --- Ink (dark) mode --- */
-.theme-ink,
-[data-theme="ink"] {
-  --bg:     var(--ink);
-  --bg-2:   var(--ink-2);
-  --fg:     var(--paper);
-  --fg-2:   var(--paper-2);
-  --fg-3:   #A9A396;
-  --border: var(--rule-inv);
-  /* mono-on-dark: push brighter variants so they pop on #0B0B09 */
-  --mono-1: var(--green-2);
-  --mono-2: #C277FF;
-  --mono-3: var(--mascot-hot);
-  --mono-4: var(--sun);
-  --mono-5: var(--flame);
-  --mono-6: #7AA0FF;
-}
-
-/* System preference default — flips light/dark with the OS */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="paper"]) {
-    --bg:     var(--ink);
-    --bg-2:   var(--ink-2);
-    --fg:     var(--paper);
-    --fg-2:   var(--paper-2);
-    --fg-3:   #A9A396;
-    --border: var(--rule-inv);
-    --mono-1: var(--green-2);
-    --mono-2: #C277FF;
-    --mono-3: var(--mascot-hot);
-    --mono-4: var(--sun);
-    --mono-5: var(--flame);
-    --mono-6: #7AA0FF;
-  }
-}
-
-/* ============================================================
-   Base elements
-   ============================================================ */
-
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+/* Rows: no separators, hover surface tint instead */
+.row { background: transparent; transition: background var(--dur-snap) var(--ease); }
+.row:hover { background: var(--surface-2); }
+[data-theme="ink"] .row:hover { background: var(--surface-ink-2); }
 
 body {
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--panel-0);
+  color: var(--panel-text);
   font-family: var(--ff-mono);
-  font-size: var(--fs-body);
-  line-height: var(--lh-base);
+  font-size: 13px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  font-feature-settings: 'ss01', 'ss02', 'calt' 1;
 }
 
 /* ============================================================
@@ -311,7 +230,7 @@ code, .t-code {
   font-size: 0.9em;
   background: var(--bg-2);
   padding: 0.15em 0.5em;
-  border: var(--bw-hair) solid var(--border);
+  
   border-radius: var(--r-1);
 }
 
@@ -365,18 +284,18 @@ code, .t-code {
    Primitives — rules, stamps, buttons
    ============================================================ */
 
-.rule       { border: 0; border-top: var(--bw-hair) solid var(--border); margin: 0; }
-.rule-double{ border: 0; border-top: var(--bw-hair) solid var(--border); border-bottom: var(--bw-hair) solid var(--border); height: var(--bw-rule); margin: 0; }
-.rule-dotted{ border: 0; border-top: var(--bw-hair) dotted var(--border); margin: 0; }
-.rule-green { border: 0; border-top: var(--bw-rule) solid var(--green); margin: 0; }
-.rule-purple{ border: 0; border-top: var(--bw-rule) solid var(--purple); margin: 0; }
-.rule-mascot{ border: 0; border-top: var(--bw-rule) solid var(--mascot); margin: 0; }
+.rule       {   margin: 0; }
+.rule-double{    height: var(--bw-rule); margin: 0; }
+.rule-dotted{   margin: 0; }
+.rule-green {   margin: 0; }
+.rule-purple{   margin: 0; }
+.rule-mascot{   margin: 0; }
 
 /* The 247420 stamp */
 .stamp {
   display: inline-block;
   padding: var(--space-1) var(--space-3);
-  border: var(--bw-hair) solid var(--fg);
+  
   border-radius: var(--r-pill);
   color: var(--fg);
   background: transparent;
@@ -388,14 +307,14 @@ code, .t-code {
   transform: rotate(-2deg);
 }
 .stamp.ink     { background: var(--fg);     color: var(--bg); }
-.stamp.green   { background: var(--green);  color: var(--green-fg);  border-color: var(--green-fg); }
-.stamp.purple  { background: var(--purple); color: var(--purple-fg); border-color: var(--purple-fg); }
-.stamp.mascot  { background: var(--mascot); color: var(--mascot-fg); border-color: var(--mascot-fg); }
-.stamp.sun     { background: var(--sun);    color: var(--ink);       border-color: var(--ink); }
-.stamp.flame   { background: var(--flame);  color: var(--paper);     border-color: var(--paper); }
+.stamp.green   { background: var(--green);  color: var(--green-fg);   }
+.stamp.purple  { background: var(--purple); color: var(--purple-fg);  }
+.stamp.mascot  { background: var(--mascot); color: var(--mascot-fg);  }
+.stamp.sun     { background: var(--sun);    color: var(--ink);        }
+.stamp.flame   { background: var(--flame);  color: var(--paper);      }
 
 /* Legacy alias — .stamp.acid now means green */
-.stamp.acid    { background: var(--green);  color: var(--green-fg);  border-color: var(--green-fg); }
+.stamp.acid    { background: var(--green);  color: var(--green-fg);   }
 
 /* The "stamp button" */
 .btn-stamp {
@@ -405,7 +324,7 @@ code, .t-code {
   padding: var(--space-3) var(--space-4);
   background: var(--fg);
   color: var(--bg);
-  border: var(--bw-hair) solid var(--fg);
+  
   border-radius: var(--r-2);
   box-shadow: 4px 4px 0 var(--fg);
   font-family: var(--ff-mono);
@@ -420,12 +339,12 @@ code, .t-code {
 .btn-stamp:hover  { transform: translate(1px, 1px); box-shadow: 3px 3px 0 var(--fg); }
 .btn-stamp:active { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--fg); }
 
-.btn-stamp.green  { background: var(--green);  color: var(--green-fg);  border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); }
-.btn-stamp.purple { background: var(--purple); color: var(--purple-fg); border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); }
-.btn-stamp.mascot { background: var(--mascot); color: var(--mascot-fg); border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); }
-.btn-stamp.sun    { background: var(--sun);    color: var(--ink);       border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); }
-.btn-stamp.flame  { background: var(--flame);  color: var(--paper);     border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); }
-.btn-stamp.acid   { background: var(--green);  color: var(--green-fg);  border-color: var(--ink); box-shadow: 4px 4px 0 var(--ink); } /* legacy */
+.btn-stamp.green  { background: var(--green);  color: var(--green-fg);   box-shadow: 4px 4px 0 var(--ink); }
+.btn-stamp.purple { background: var(--purple); color: var(--purple-fg);  box-shadow: 4px 4px 0 var(--ink); }
+.btn-stamp.mascot { background: var(--mascot); color: var(--mascot-fg);  box-shadow: 4px 4px 0 var(--ink); }
+.btn-stamp.sun    { background: var(--sun);    color: var(--ink);        box-shadow: 4px 4px 0 var(--ink); }
+.btn-stamp.flame  { background: var(--flame);  color: var(--paper);      box-shadow: 4px 4px 0 var(--ink); }
+.btn-stamp.acid   { background: var(--green);  color: var(--green-fg);   box-shadow: 4px 4px 0 var(--ink); } /* legacy */
 
 /* Plain button — default */
 .btn {
@@ -435,7 +354,7 @@ code, .t-code {
   padding: var(--space-3) var(--space-4);
   background: transparent;
   color: var(--fg);
-  border: var(--bw-hair) solid var(--fg);
+  
   border-radius: var(--r-2);
   font-family: var(--ff-mono);
   font-weight: 500;
@@ -447,12 +366,12 @@ code, .t-code {
   transition: background var(--dur-snap) var(--ease), color var(--dur-snap) var(--ease);
 }
 .btn:hover  { background: var(--fg); color: var(--bg); }
-.btn:active { background: var(--green); color: var(--green-fg); border-color: var(--green); }
+.btn:active { background: var(--green); color: var(--green-fg);  }
 
 /* Ghost/link button */
 .btn-ghost {
   background: transparent;
-  border: none;
+  
   color: var(--fg);
   font-family: var(--ff-mono);
   font-size: var(--fs-sm);
@@ -469,17 +388,17 @@ code, .t-code {
 .input {
   width: 100%;
   background: var(--bg);
-  border: var(--bw-hair) solid var(--border);
+  
   border-radius: var(--r-2);
   padding: var(--space-3) var(--space-3);
   font-family: var(--ff-mono);
   font-size: var(--fs-body);
   color: var(--fg);
-  outline: none;
+  
   transition: border-color var(--dur-snap) var(--ease), box-shadow var(--dur-snap) var(--ease);
 }
 .input:focus {
-  border-color: var(--green);
+  
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--green) 25%, transparent);
 }
 .input::placeholder { color: var(--fg-3); }
@@ -496,14 +415,14 @@ code, .t-code {
   align-items: baseline;
   gap: var(--space-4);
   padding-bottom: var(--space-2);
-  border-bottom: var(--bw-hair) solid var(--border);
+  
   font-family: var(--ff-mono);
   font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: var(--tr-label);
 }
 .dateline > * { white-space: nowrap; }
-.dateline .spread { flex: 1; border-bottom: var(--bw-hair) dotted var(--border); align-self: center; }
+.dateline .spread { flex: 1;  align-self: center; }
 
 /* Index-card row — soft card with breathing room */
 .row {
@@ -511,7 +430,7 @@ code, .t-code {
   grid-template-columns: 80px 1fr auto;
   gap: var(--space-4);
   padding: var(--space-4);
-  border: var(--bw-hair) solid var(--border);
+  
   border-radius: var(--r-3);
   background: var(--bg);
   align-items: baseline;
@@ -528,14 +447,122 @@ code, .t-code {
 
 /* Soft card — the generic container */
 .card {
-  border: var(--bw-hair) solid var(--border);
+  
   border-radius: var(--r-3);
   background: var(--bg);
   padding: var(--space-5);
 }
-.card.chunk { border-width: var(--bw-chunk); }
+.card.chunk {  }
 
 /* ============================================================
    Selection
    ============================================================ */
 ::selection { background: var(--mascot); color: var(--mascot-fg); }
+
+
+/* ============================================================
+   Panel surface tokens — brand-bible parchment palette
+   Light default. Dark via prefers-color-scheme or [data-theme="dark"].
+   ============================================================ */
+:root {
+  --panel-0:       var(--paper);  /* #EFE9DD canvas */
+  --panel-1:       #f6f1e7;
+  --panel-2:       #ece5d8;
+  --panel-3:       #ddd4c3;
+  --panel-hover:   #e6dece;
+  --panel-select:  #d8eed6;
+  --panel-text:    var(--ink);    /* #0B0B09 */
+  --panel-text-2:  #4a473f;
+  --panel-text-3:  #6d675b;
+  --panel-accent:    var(--green);
+  --panel-accent-2:  var(--green-deep);
+  --panel-accent-fg: #ffffff;
+  --panel-shadow:  none;
+  --panel-shadow-top: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --panel-0:       #0B0B09;
+    --panel-1:       #141411;
+    --panel-2:       #1f1f1a;
+    --panel-3:       #2a2a23;
+    --panel-hover:   #24241f;
+    --panel-select:  #1f3520;
+    --panel-text:    #EFE9DD;
+    --panel-text-2:  #d2cab9;
+    --panel-text-3:  #afa797;
+    --panel-accent:    var(--green-2);
+    --panel-accent-2:  var(--green-2);
+    --panel-accent-fg: var(--ink);
+    --panel-shadow:  none;
+    --panel-shadow-top: none;
+  }
+}
+
+[data-theme="dark"] {
+  --panel-0:       #0B0B09;
+  --panel-1:       #141411;
+  --panel-2:       #1f1f1a;
+  --panel-3:       #2a2a23;
+  --panel-hover:   #24241f;
+  --panel-select:  #1f3520;
+  --panel-text:    #EFE9DD;
+  --panel-text-2:  #d2cab9;
+  --panel-text-3:  #afa797;
+  --panel-accent:    var(--green-2);
+  --panel-accent-2:  var(--green-2);
+  --panel-accent-fg: var(--ink);
+  --panel-shadow:  none;
+  --panel-shadow-top: none;
+}
+
+[data-theme="light"] {
+  --panel-0:       var(--paper);
+  --panel-1:       #f6f1e7;
+  --panel-2:       #ece5d8;
+  --panel-3:       #ddd4c3;
+  --panel-hover:   #e6dece;
+  --panel-select:  #d8eed6;
+  --panel-text:    var(--ink);
+  --panel-text-2:  #4a473f;
+  --panel-text-3:  #6d675b;
+  --panel-accent:    var(--green);
+  --panel-accent-2:  var(--green-deep);
+  --panel-accent-fg: #ffffff;
+  --panel-shadow:  none;
+}
+
+/* Foreground / background aliases derived from panel tokens */
+:root {
+  --fg:   var(--panel-text);
+  --fg-3: var(--panel-text-3);
+  --bg:   var(--panel-0);
+  --bg-2: var(--panel-2);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fg:   var(--panel-text);
+    --fg-3: var(--panel-text-3);
+    --bg:   var(--panel-0);
+    --bg-2: var(--panel-2);
+  }
+}
+[data-theme="dark"]  { --fg: var(--panel-text); --fg-3: var(--panel-text-3); --bg: var(--panel-0); --bg-2: var(--panel-2); }
+[data-theme="light"] { --fg: var(--panel-text); --fg-3: var(--panel-text-3); --bg: var(--panel-0); --bg-2: var(--panel-2); }
+
+/* Contrast safety on any acid/lime/mint surface — text must be ink,
+   never light grey / white. Covers the --acid token and any hue that
+   pairs a near-white fg against a near-white accent. */
+.on-acid, .on-lime, [data-accent="acid"], [data-accent="lime"] {
+  background: var(--acid);
+  color: var(--ink);
+}
+.on-acid *, .on-lime *, [data-accent="acid"] *, [data-accent="lime"] * {
+  color: inherit;
+}
+
+/* Universal reset — no borders, no outlines except :focus-visible */
+*, *::before, *::after { box-sizing: border-box; border: 0 !important; outline: 0 !important; }
+:focus-visible { outline: 2px solid var(--panel-accent) !important; outline-offset: 2px; }
+html, body { margin: 0; padding: 0; }

@@ -3,263 +3,235 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>// diagen · voice chat</title>
+  <meta name="theme-color" content="#247420" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#3A9A34" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <title>diagen / voice chat</title>
   <script>window.coi = { coepCredentialless: () => true }</script>
   <script src="./coi-serviceworker.js"></script>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
   <link rel="stylesheet" href="../design/colors_and_type.css">
+  <link rel="stylesheet" href="../design/app-shell.css">
   <style>
-    html, body { min-height: 100dvh; }
-    body {
-      background: var(--bg); color: var(--fg);
-      font-family: var(--ff-mono); font-size: var(--fs-sm);
-      padding: 0; margin: 0;
-    }
-
-    .dline {
-      position: sticky; top: 0; z-index: var(--z-header);
-      display: flex; align-items: baseline; gap: var(--space-4);
-      padding: var(--space-3) var(--space-5);
-      border-bottom: var(--bw-hair) solid var(--border);
-      background: color-mix(in oklab, var(--bg) 88%, transparent);
-      backdrop-filter: blur(8px);
-      font-family: var(--ff-mono); font-size: var(--fs-xs);
-      text-transform: uppercase; letter-spacing: var(--tr-label);
-    }
-    .dline a { color: var(--fg); text-decoration: none; }
-    .dline a:hover { background: var(--fg); color: var(--bg); }
-    .dline .sep { flex: 1; border-bottom: var(--bw-hair) dotted var(--border); align-self: center; }
-    .dline nav { display: flex; gap: var(--space-4); flex-wrap: wrap; }
-
     .stage {
       max-width: 760px; margin: 0 auto;
-      padding: var(--space-5);
-      display: flex; flex-direction: column; gap: var(--space-4);
+      padding: 24px 32px 64px;
+      display: flex; flex-direction: column; gap: 16px;
     }
 
-    .sec-label { font-family: var(--ff-mono); font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: var(--tr-label); color: var(--fg-3); }
+    .page-title { font-family: var(--ff-display); font-size: clamp(32px, 6vw, 48px); line-height: 1; letter-spacing: -0.02em; font-weight: 700; margin: 0 0 4px; color: var(--panel-text); }
+    .page-title .accent { color: var(--panel-accent); }
+    .subline { font-family: var(--ff-mono); font-size: 11px; color: var(--panel-text-2); text-transform: uppercase; letter-spacing: 0.08em; }
 
-    h1.title {
-      font-family: var(--ff-display);
-      font-size: clamp(36px, 6vw, 56px);
-      line-height: 1; letter-spacing: -0.02em; font-weight: 700;
-      margin: 0 0 var(--space-2);
-    }
-    h1.title .accent { color: var(--mono-1); }
-    .subline { font-family: var(--ff-mono); font-size: var(--fs-xs); color: var(--fg-3); text-transform: uppercase; letter-spacing: var(--tr-label); }
-
-    /* progress receipt */
-    #progress-wrap {
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-2);
-      background: var(--bg-2); overflow: hidden;
-    }
+    #progress-wrap { background: var(--panel-1); border-radius: 8px; overflow: hidden; box-shadow: var(--panel-shadow); }
     #progress-text {
-      font-family: var(--ff-mono); font-size: var(--fs-tiny);
-      padding: var(--space-2) var(--space-3);
-      text-transform: uppercase; letter-spacing: var(--tr-label);
-      color: var(--fg-3);
-      display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3);
+      font-family: var(--ff-mono); font-size: 11px;
+      padding: 8px 12px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--panel-text-2);
+      display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
     }
-    #progress-text::before { content: "// loading"; color: var(--mono-2); }
-    #progress-track { height: 2px; background: var(--bg-2); border-top: var(--bw-hair) solid var(--border); }
-    #progress-bar { height: 2px; width: 0%; background: var(--green); transition: width 0.3s; }
+    #progress-text::before { content: "// loading"; color: var(--panel-accent); }
+    #progress-track { height: 2px; background: var(--panel-2); }
+    #progress-bar { height: 2px; width: 0%; background: var(--panel-accent); transition: width 0.3s; }
 
     #vrm-canvas {
       width: 100%; height: 340px; display: block;
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-3);
-      background: var(--bg-2);
+      border-radius: 8px;
+      background: var(--panel-1);
+      box-shadow: var(--panel-shadow);
     }
 
-    /* voice picker */
     #voice-wrap {
-      display: flex; align-items: center; gap: var(--space-3);
-      padding: var(--space-2) var(--space-3);
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-2);
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 12px;
+      background: var(--panel-1); border-radius: 6px; box-shadow: var(--panel-shadow);
     }
-    #voice-wrap label { font-family: var(--ff-mono); font-size: var(--fs-tiny); text-transform: uppercase; letter-spacing: var(--tr-label); color: var(--fg-3); }
+    #voice-wrap label { font-family: var(--ff-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--panel-text-2); }
     #voice-select {
-      flex: 1; background: transparent; color: var(--fg);
-      border: 0; outline: none;
-      font-family: var(--ff-mono); font-size: var(--fs-sm);
-      padding: var(--space-1) 0; cursor: pointer;
+      flex: 1; background: transparent; color: var(--panel-text);
+      font-family: var(--ff-mono); font-size: 12px;
+      padding: 4px 0; cursor: pointer;
     }
 
-    /* character sheet */
-    #character-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+    #character-wrap { display: flex; flex-direction: column; gap: 8px; }
     #character-wrap > label {
-      display: flex; align-items: center; gap: var(--space-2);
-      font-family: var(--ff-mono); font-size: var(--fs-tiny);
-      text-transform: uppercase; letter-spacing: var(--tr-label);
-      color: var(--fg-3);
+      display: flex; align-items: center; gap: 8px;
+      font-family: var(--ff-mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--panel-text-2);
     }
-    #character-wrap > label::before { content: "// npc"; color: var(--mono-3); }
+    #character-wrap > label::before { content: "// npc"; color: var(--panel-accent); }
+
     #sheet-mic-btn, #card-load-btn {
-      font-family: var(--ff-mono); font-size: var(--fs-tiny);
-      text-transform: uppercase; letter-spacing: var(--tr-label);
-      background: transparent; color: var(--fg);
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-1);
-      padding: 2px var(--space-2); cursor: pointer;
-      transition: background var(--dur-snap) var(--ease), color var(--dur-snap) var(--ease);
+      font-family: var(--ff-mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      background: var(--panel-2); color: var(--panel-text);
+      border-radius: 4px;
+      padding: 2px 8px; cursor: pointer;
+      transition: background 80ms ease;
     }
     #sheet-mic-btn { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-    #sheet-mic-btn:hover, #card-load-btn:hover { background: var(--fg); color: var(--bg); }
-    #sheet-mic-btn.recording { background: var(--warn); color: var(--paper); border-color: var(--warn); }
+    #sheet-mic-btn:hover, #card-load-btn:hover { background: var(--panel-3); }
+    #sheet-mic-btn.recording { background: var(--warn); color: var(--paper); }
 
     #character-sheet {
-      width: 100%; background: var(--bg-2); color: var(--fg);
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-2);
-      font-family: var(--ff-mono); font-size: var(--fs-sm);
-      padding: var(--space-3); outline: none;
-      resize: vertical; min-height: 84px; max-height: 200px;
-      transition: border-color var(--dur-snap) var(--ease);
+      width: 100%; background: var(--panel-1); color: var(--panel-text);
+      border-radius: 6px;
+      font-family: var(--ff-mono); font-size: 12px;
+      padding: 12px; resize: vertical; min-height: 84px; max-height: 200px;
+      transition: box-shadow 80ms ease;
+      box-shadow: var(--panel-shadow);
     }
-    #character-sheet:focus { border-color: var(--green); box-shadow: 0 0 0 3px color-mix(in oklab, var(--green) 22%, transparent); }
+    #character-sheet:focus { box-shadow: 0 0 0 2px var(--panel-accent); }
 
     #persona-btn {
-      font-family: var(--ff-mono); font-size: var(--fs-xs);
-      text-transform: uppercase; letter-spacing: var(--tr-caps);
-      background: var(--fg); color: var(--bg);
-      border: var(--bw-hair) solid var(--fg); border-radius: var(--r-2);
-      box-shadow: 4px 4px 0 var(--border);
-      padding: var(--space-3) var(--space-4); cursor: pointer;
-      transition: transform var(--dur-snap) var(--ease), box-shadow var(--dur-snap) var(--ease);
+      font-family: var(--ff-mono); font-size: 12px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      background: var(--panel-text); color: var(--panel-0);
+      border-radius: 6px;
+      box-shadow: 4px 4px 0 var(--panel-3);
+      padding: 10px 16px; cursor: pointer;
+      transition: transform 80ms ease, box-shadow 80ms ease;
     }
-    #persona-btn:not(:disabled):hover { transform: translate(1px,1px); box-shadow: 3px 3px 0 var(--border); }
-    #persona-btn:not(:disabled):active { transform: translate(4px,4px); box-shadow: 0 0 0 var(--border); }
-    #persona-btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+    #persona-btn:not(:disabled):hover { transform: translate(1px,1px); box-shadow: 3px 3px 0 var(--panel-3); }
+    #persona-btn:not(:disabled):active { transform: translate(4px,4px); box-shadow: 0 0 0 var(--panel-3); }
+    #persona-btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
 
-    /* chat log */
     #chat {
-      display: flex; flex-direction: column; gap: var(--space-3);
-      padding: var(--space-4);
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-3);
-      background: var(--bg);
+      display: flex; flex-direction: column; gap: 12px;
+      padding: 16px;
+      background: var(--panel-1); border-radius: 8px;
+      box-shadow: var(--panel-shadow);
       min-height: 160px; max-height: 40dvh; overflow-y: auto;
     }
     #chat:empty::before {
       content: "// no messages yet. press the mic.";
-      font-family: var(--ff-mono); font-size: var(--fs-tiny);
-      text-transform: uppercase; letter-spacing: var(--tr-label);
-      color: var(--fg-3);
+      font-family: var(--ff-mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--panel-text-2);
     }
     .bubble {
-      font-family: var(--ff-mono); font-size: var(--fs-sm);
+      font-family: var(--ff-mono); font-size: 12px;
       line-height: 1.55; white-space: pre-wrap; word-break: break-word;
-      padding: var(--space-3); max-width: 90%;
-      border: var(--bw-hair) solid var(--border); border-radius: var(--r-2);
+      padding: 12px; max-width: 90%;
+      border-radius: 6px;
     }
     .bubble.user {
       align-self: flex-end;
-      background: var(--green); color: var(--green-fg);
-      border-color: var(--green);
+      background: var(--panel-accent); color: var(--panel-accent-fg);
     }
     .bubble.user::before {
-      display: block; content: "// you"; font-size: var(--fs-tiny);
-      letter-spacing: var(--tr-label); text-transform: uppercase;
-      color: var(--green-fg); opacity: .7; margin-bottom: var(--space-1);
+      display: block; content: "// you"; font-size: 11px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      opacity: .7; margin-bottom: 4px;
     }
     .bubble.assistant {
       align-self: flex-start;
-      background: var(--bg-2); color: var(--fg);
+      background: var(--panel-2); color: var(--panel-text);
     }
     .bubble.assistant::before {
-      display: block; content: "// npc"; font-size: var(--fs-tiny);
-      letter-spacing: var(--tr-label); text-transform: uppercase;
-      color: var(--mono-3); margin-bottom: var(--space-1);
+      display: block; content: "// npc"; font-size: 11px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--mascot); margin-bottom: 4px;
     }
 
-    /* speak control */
     #controls {
-      display: flex; flex-direction: column; align-items: center; gap: var(--space-3);
-      padding: var(--space-5) 0 var(--space-6);
-      border-top: var(--bw-hair) solid var(--border);
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      padding: 24px 0 32px;
+      box-shadow: 0 -1px 0 var(--panel-2);
     }
     #speak-btn {
-      width: 88px; height: 88px; border-radius: var(--r-pill);
-      background: var(--fg); color: var(--bg);
-      border: var(--bw-hair) solid var(--fg);
-      box-shadow: 6px 6px 0 var(--border);
+      width: 88px; height: 88px; border-radius: 9999px;
+      background: var(--panel-text); color: var(--panel-0);
+      box-shadow: 6px 6px 0 var(--panel-3);
       font-size: 32px; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      transition: transform var(--dur-snap) var(--ease), box-shadow var(--dur-snap) var(--ease), background var(--dur-snap) var(--ease);
+      transition: transform 80ms ease, box-shadow 80ms ease, background 80ms ease;
     }
-    #speak-btn:not(:disabled):hover { transform: translate(1px,1px); box-shadow: 5px 5px 0 var(--border); }
-    #speak-btn:not(:disabled):active { transform: translate(6px,6px); box-shadow: 0 0 0 var(--border); }
+    #speak-btn:not(:disabled):hover { transform: translate(1px,1px); box-shadow: 5px 5px 0 var(--panel-3); }
+    #speak-btn:not(:disabled):active { transform: translate(6px,6px); box-shadow: 0 0 0 var(--panel-3); }
     #speak-btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
-    #speak-btn.recording { background: var(--warn); color: var(--paper); border-color: var(--warn); animation: rec 1s infinite; }
+    #speak-btn.recording { background: var(--warn); color: var(--paper); animation: rec 1s infinite; }
     @keyframes rec { 0%,100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 
     #status {
-      font-family: var(--ff-mono); font-size: var(--fs-tiny);
-      text-transform: uppercase; letter-spacing: var(--tr-label);
-      color: var(--fg-3); min-height: 1.2em; text-align: center;
+      font-family: var(--ff-mono); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--panel-text-2); min-height: 1.2em; text-align: center;
     }
-
-    footer {
-      display: flex; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap;
-      padding: var(--space-4) var(--space-5);
-      border-top: var(--bw-hair) solid var(--border);
-      font-family: var(--ff-mono); font-size: var(--fs-micro);
-      text-transform: uppercase; letter-spacing: var(--tr-label); color: var(--fg-3);
-    }
-    footer a { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--fg); }
   </style>
 </head>
 <body>
+<div class="app">
 
-  <header class="dline">
-    <a href="../" class="mono-green"><strong>// diagen</strong></a>
-    <span>voice chat · live demo</span>
-    <span class="sep"></span>
+  <header class="app-topbar">
+    <span class="brand">diagen<span class="slash"> / </span>247420</span>
     <nav>
       <a href="../">← back</a>
       <a href="https://github.com/AnEntrypoint/diagen">source ↗</a>
     </nav>
   </header>
 
-  <main class="stage">
+  <div class="app-crumb">
+    <span>diagen</span><span class="sep">›</span>
+    <span class="leaf">demo</span>
+  </div>
 
-    <div>
-      <h1 class="title"><span class="accent">//</span> llama voice chat</h1>
-      <div class="subline">in-browser · qwen3.5 · pocket-tts · vrm mouth · zero server</div>
-    </div>
+  <div class="app-body no-side">
+    <main class="app-main" style="padding:0; max-width:none;">
 
-    <div id="progress-wrap">
-      <div id="progress-text">initializing…</div>
-      <div id="progress-track"><div id="progress-bar"></div></div>
-    </div>
+      <div class="stage">
 
-    <canvas id="vrm-canvas"></canvas>
+        <div>
+          <h1 class="page-title"><span class="accent">//</span> voice chat</h1>
+          <div class="subline">in-browser · chatterbox turbo · vrm mouth · zero server</div>
+        </div>
 
-    <div id="voice-wrap" hidden>
-      <label for="voice-select">voice</label>
-      <select id="voice-select"></select>
-    </div>
+        <div id="progress-wrap">
+          <div id="progress-text">initializing…</div>
+          <div id="progress-track"><div id="progress-bar"></div></div>
+        </div>
 
-    <div id="character-wrap">
-      <label for="character-sheet">
-        npc identity
-        <button id="sheet-mic-btn" title="describe changes by voice">🎤</button>
-        <button id="card-load-btn" title="load sillytavern character card (.json)">load card</button>
-        <input type="file" id="card-file" accept=".json" hidden>
-      </label>
-      <textarea id="character-sheet" placeholder="describe who this npc is — name, role in the world, personality, how they speak. they are a character in a game, not an ai."></textarea>
-      <button id="persona-btn" disabled>lock in character</button>
-    </div>
+        <canvas id="vrm-canvas"></canvas>
 
-    <div id="chat"></div>
+        <div id="voice-wrap" hidden>
+          <label for="voice-select">voice</label>
+          <select id="voice-select"></select>
+        </div>
 
-    <div id="controls">
-      <button id="speak-btn" disabled title="press to speak">🎤</button>
-      <div id="status">loading model…</div>
-    </div>
+        <div id="character-wrap">
+          <label for="character-sheet">
+            npc identity
+            <button id="sheet-mic-btn" title="describe changes by voice">🎤</button>
+            <button id="card-load-btn" title="load sillytavern character card (.json)">load card</button>
+            <input type="file" id="card-file" accept=".json" hidden>
+          </label>
+          <textarea id="character-sheet" placeholder="describe who this npc is — name, role in the world, personality, how they speak. they are a character in a game, not an ai."></textarea>
+          <button id="persona-btn" disabled>lock in character</button>
+        </div>
 
-  </main>
+        <div id="chat"></div>
 
-  <footer>
-    <span>247420 / mmxxvi · <a href="https://github.com/AnEntrypoint/diagen">built in public</a></span>
-    <span>no cookies · no analytics · probably emerging 🌀</span>
+        <div id="controls">
+          <button id="speak-btn" disabled title="press to speak">🎤</button>
+          <div id="status">loading model…</div>
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <footer class="app-status">
+    <span class="item">demo</span>
+    <span class="spread"></span>
+    <span class="item">247420 / mmxxvi</span>
+    <span class="item">· probably emerging</span>
   </footer>
 
-  <script type="module" src="./app.js?v=6"></script>
+</div>
+
+<script type="module" src="./app.js?v=6"></script>
 </body>
 </html>
