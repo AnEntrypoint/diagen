@@ -259,10 +259,63 @@ describe('Audio2FaceCore', () => {
     })
   })
 
-  describe('processAudioChunk without session', () => {
-    it('throws', async () => {
+  describe('processText (lipsync SDK path)', () => {
+    it('returns fixed-fps Float32Array[52] frames', () => {
+      const a = new Audio2FaceCore({ fps: 30 })
+      const frames = a.processText('hello world this is a test', 1000, { fps: 30 })
+      expect(frames.length).toBe(30)
+      expect(frames[0].constructor.name).toBe('Float32Array')
+      expect(frames[0].length).toBe(52)
+    })
+
+    it('produces non-zero mouth motion', () => {
       const a = new Audio2FaceCore()
-      await expect(a.processAudioChunk(new Float32Array(100))).rejects.toThrow('No session loaded')
+      const frames = a.processText('the quick brown fox jumps over the lazy dog', 2000, { fps: 30 })
+      const maxJaw = frames.reduce((m, f) => Math.max(m, f[24]), 0)
+      expect(maxJaw).toBeGreaterThan(0)
+    })
+  })
+
+  describe('AFAN serialization', () => {
+    it('buildAfan emits valid header', () => {
+      const a = new Audio2FaceCore()
+      const frames = a.processText('hello there', 1000, { fps: 30 })
+      const buf = a.buildAfan(frames, 30)
+      expect(buf.readUInt32LE(0)).toBe(0x4146414E)
+      expect(buf.readUInt8(4)).toBe(2)
+      expect(buf.readUInt8(5)).toBe(30)
+      expect(buf.readUInt8(6)).toBe(52)
+      expect(buf.readUInt32LE(8)).toBe(frames.length)
+      expect(buf.length).toBe(12 + frames.length * 52)
+    })
+
+    it('textToAfan one-shot matches manual pipeline', () => {
+      const a = new Audio2FaceCore({ fps: 30 })
+      const buf = a.textToAfan('hello', 500)
+      expect(buf.readUInt32LE(0)).toBe(0x4146414E)
+      expect(buf.readUInt32LE(8)).toBe(15)
+    })
+
+    it('static toAfan works on frame arrays', () => {
+      const frames = [new Float32Array(52), new Float32Array(52)]
+      const buf = Audio2FaceCore.toAfan(frames, 30)
+      expect(buf.readUInt32LE(0)).toBe(0x4146414E)
+      expect(buf.readUInt32LE(8)).toBe(2)
+    })
+  })
+
+  describe('processAudioChunk (streaming compat)', () => {
+    it('returns empty result before buffer fills', async () => {
+      const a = new Audio2FaceCore()
+      const r = await a.processAudioChunk(new Float32Array(100))
+      expect(r.blendshapes).toHaveLength(52)
+    })
+
+    it('emits frame once buffer fills', async () => {
+      const a = new Audio2FaceCore()
+      const r = await a.processAudioChunk(new Float32Array(a.bufferLen + 100), { text: 'aaa' })
+      expect(r.blendshapes).toHaveLength(52)
+      expect(typeof r.jaw).toBe('number')
     })
   })
 })

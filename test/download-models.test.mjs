@@ -15,13 +15,6 @@ describe('download-models structure', () => {
     expect(src).not.toContain('ipfs')
   })
 
-  it('audio2afan model includes config.json and model.onnx', () => {
-    const src = fs.readFileSync(path.join(process.cwd(), 'download-models.js'), 'utf8')
-    expect(src).toContain("'config.json'")
-    expect(src).toContain("'model.onnx'")
-    expect(src).toContain("'solve_data.npz'")
-  })
-
   it('tts model includes required ONNX files', () => {
     const src = fs.readFileSync(path.join(process.cwd(), 'download-models.js'), 'utf8')
     expect(src).toContain('flow_lm_flow_int8.onnx')

@@ -62,8 +62,10 @@ function buildAfan(frames, fps = 30) {
   buf.writeUInt32LE(numFrames, offset); offset += 4
   for (let f = 0; f < numFrames; f++) {
     const frame = frames[f]
+    const indexed = typeof frame.length === 'number'
     for (let i = 0; i < numBlendshapes; i++) {
-      const v = frame[i]
+      const raw = indexed ? frame[i] : frame[ARKIT_NAMES[i]]
+      const v = raw == null ? 0 : raw
       buf[offset++] = v <= 0 ? 0 : v >= 1 ? 255 : (v * 255 + 0.5) | 0
     }
   }

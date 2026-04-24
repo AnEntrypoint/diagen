@@ -2,12 +2,10 @@ import express from 'express'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { createRequire } from 'module'
 import { encodeWAV, buildAfan } from './server-utils.mjs'
-import { LipsyncSDKNode, estimateWordTimings, trackToFrames } from '../a2f/lipsync-sdk-node.mjs'
+import { LipsyncSDKNode } from '../a2f/lipsync-sdk-node.mjs'
 import { synthesize as synthesizeTTS, setRefVoice as chatterboxSetRef } from './chatterbox-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
-import os from 'os'
 
 // Load environment variables from .env
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -32,35 +30,6 @@ let disconnectFromVoiceChannel = null
 let getDebugState = null
 let setVoiceEmbedding = null
 let getDiscordClient = null
-
-const require = createRequire(import.meta.url)
-const ORT_CPUS = os.cpus().length
-
-let _ortPatched = false
-async function getOrt() {
-  const ort = (await import('onnxruntime-node')).default
-  if (!_ortPatched) {
-    const origOrtCreate = ort.InferenceSession.create.bind(ort.InferenceSession)
-    ort.InferenceSession.create = async function(modelPath, options = {}) {
-      const explicit = options.executionProviders
-      const providers = explicit || ['cpu']
-      const wantDml = !explicit || (!providers.includes('cpu') || providers.length > 1)
-      const patched = {
-        ...options,
-        executionProviders: (wantDml && !providers.includes('dml')) ? ['dml', ...providers] : providers,
-        intraOpNumThreads: Math.max(options.intraOpNumThreads || 0, ORT_CPUS),
-        interOpNumThreads: Math.max(options.interOpNumThreads || 0, Math.floor(ORT_CPUS / 4)),
-        executionMode: 'parallel',
-        enableCpuMemArena: true,
-        enableMemPattern: true,
-        graphOptimizationLevel: options.graphOptimizationLevel || 'all',
-      }
-      return origOrtCreate(modelPath, patched)
-    }
-    _ortPatched = true
-  }
-  return ort
-}
 
 const app = express()
 const port = process.env.PORT || 8080
@@ -289,7 +258,7 @@ async function start() {
   const discordOnly = (process.env.DISCORD_TOKEN || process.env.DISCORD_BOT_TOKEN) && process.env.DEMO !== '1'
   if (!discordOnly) {
     await ensureModels()
-    await loadA2F()
+    loadLipsync()
   }
   await loadVoiceEmbedding()
 

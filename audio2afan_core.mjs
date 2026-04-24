@@ -1,391 +1,247 @@
-const ARKIT_BLENDSHAPES = [
-  'browInnerUp', 'browDownLeft', 'browDownRight', 'browOuterUpLeft', 'browOuterUpRight',
-  'eyeLookUpLeft', 'eyeLookUpRight', 'eyeLookDownLeft', 'eyeLookDownRight',
-  'eyeLookInLeft', 'eyeLookInRight', 'eyeLookOutLeft', 'eyeLookOutRight',
-  'eyeBlinkLeft', 'eyeBlinkRight', 'eyeSquintLeft', 'eyeSquintRight',
-  'eyeWideLeft', 'eyeWideRight', 'cheekPuff', 'cheekSquintLeft', 'cheekSquintRight',
-  'noseSneerLeft', 'noseSneerRight', 'jawOpen', 'jawForward', 'jawLeft', 'jawRight',
-  'mouthFunnel', 'mouthPucker', 'mouthLeft', 'mouthRight',
-  'mouthRollUpper', 'mouthRollLower', 'mouthShrugUpper', 'mouthShrugLower',
-  'mouthOpen', 'mouthClose', 'mouthSmileLeft', 'mouthSmileRight',
-  'mouthFrownLeft', 'mouthFrownRight', 'mouthDimpleLeft', 'mouthDimpleRight',
-  'mouthUpperUpLeft', 'mouthUpperUpRight', 'mouthLowerDownLeft', 'mouthLowerDownRight',
-  'mouthPressLeft', 'mouthPressRight', 'mouthStretchLeft', 'mouthStretchRight'
-];
+import { LipsyncSDKNode } from '../a2f/lipsync-sdk-node.mjs'
+import { buildAfan as buildAfanBuf } from './server-utils.mjs'
+
+const ARKIT_BLENDSHAPES = LipsyncSDKNode.BLENDSHAPE_NAMES
 const EXPLICIT_EMOTIONS = [
   'amazement', 'anger', 'cheekiness', 'disgust', 'fear',
   'grief', 'joy', 'outofbreath', 'pain', 'sadness'
-];
-const UPPER_FACE_MAX = 19;
-const RING_CAPACITY = 16000 * 4;
-const sigmoid = x => 1 / (1 + Math.exp(-x));
-const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+]
+const UPPER_FACE_MAX = 19
+const RING_CAPACITY = 16000 * 4
+const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
+
+function vecToBlendshapes(vec) {
+  const out = new Array(ARKIT_BLENDSHAPES.length)
+  for (let i = 0; i < ARKIT_BLENDSHAPES.length; i++) {
+    out[i] = { name: ARKIT_BLENDSHAPES[i], value: clamp(vec[i] || 0) }
+  }
+  return out
+}
+
+function emptyVec() { return new Float32Array(ARKIT_BLENDSHAPES.length) }
 
 export class Audio2FaceCore {
-  static get BLENDSHAPE_NAMES() { return ARKIT_BLENDSHAPES; }
-  static get EMOTIONS() { return EXPLICIT_EMOTIONS; }
+  static get BLENDSHAPE_NAMES() { return ARKIT_BLENDSHAPES }
+  static get EMOTIONS() { return EXPLICIT_EMOTIONS }
+  static toAfan(frames, fps = 30) { return buildAfanBuf(frames, fps) }
 
-  constructor({ ort, sampleRate, smoothingFactor, config } = {}) {
-    this.ort = ort;
-    this.session = null;
-    this.sampleRate = sampleRate || 16000;
-    this.smoothingUpper = smoothingFactor ?? 0.3;
-    this.smoothingLower = smoothingFactor ?? 0.3;
-    this.bufferLen = 8320;
-    this.bufferOfs = 4160;
-    this.skinOffset = 0;
-    this.skinSize = 140;
-    this.tongueOffset = 140;
-    this.tongueSize = 10;
-    this.jawOffset = 150;
-    this.jawSize = 15;
-    this.eyesOffset = 165;
-    this.eyesSize = 4;
-    this.emotionVector = new Float32Array(26);
-    this.bsWeightMultipliers = null;
-    this.bsWeightOffsets = null;
-    this.bsSolveActivePoses = null;
-    this.faceParams = {};
-    this.lastResult = null;
-    this._ring = new Float32Array(RING_CAPACITY);
-    this._ringLen = 0;
-    this._chunkLock = null;
-    this._audioKey = null;
-    this._hasEmotion = false;
-    this._audioBuf = null;
-    this._audioTensor = null;
-    this._emotionTensor = null;
-    this._solveData = null;
-    if (config) this.loadConfig(config);
+  constructor({ sampleRate, smoothingFactor, fps, langs, config } = {}) {
+    this.sampleRate = sampleRate || 16000
+    this.smoothingUpper = smoothingFactor ?? 0.3
+    this.smoothingLower = smoothingFactor ?? 0.3
+    this.fps = fps || 30
+    this.bufferLen = 8320
+    this.bufferOfs = 4160
+    this.skinSize = 140
+    this.tongueSize = 10
+    this.tongueOffset = 140
+    this.jawSize = 15
+    this.jawOffset = 150
+    this.eyesSize = 4
+    this.eyesOffset = 165
+    this.skinOffset = 0
+    this.emotionVector = new Float32Array(26)
+    this.bsWeightMultipliers = null
+    this.bsWeightOffsets = null
+    this.bsSolveActivePoses = null
+    this.faceParams = {}
+    this.lastResult = null
+    this._ring = new Float32Array(RING_CAPACITY)
+    this._ringLen = 0
+    this._chunkLock = null
+    this.session = null
+    this._audioKey = null
+    this._hasEmotion = false
+    this._sdk = new LipsyncSDKNode({ langs: langs || ['en'], smoothing: this.smoothingUpper })
+    if (config) this.loadConfig(config)
   }
 
   loadConfig(config) {
-    const { audio_params: ap, face_params: fp, network_params: np, blendshape_params: bp } = config;
+    const { audio_params: ap, face_params: fp, network_params: np, blendshape_params: bp } = config
     if (ap) {
-      this.bufferLen = ap.buffer_len ?? this.bufferLen;
-      this.bufferOfs = ap.buffer_ofs ?? this.bufferOfs;
-      this.sampleRate = ap.samplerate ?? this.sampleRate;
-      if (this.bufferOfs > this.bufferLen) this.bufferOfs = this.bufferLen;
+      this.bufferLen = ap.buffer_len ?? this.bufferLen
+      this.bufferOfs = ap.buffer_ofs ?? this.bufferOfs
+      this.sampleRate = ap.samplerate ?? this.sampleRate
+      if (this.bufferOfs > this.bufferLen) this.bufferOfs = this.bufferLen
     }
     if (fp) {
-      this.faceParams = fp;
-      this.smoothingUpper = fp.upper_face_smoothing ?? this.smoothingUpper;
-      this.smoothingLower = fp.lower_face_smoothing ?? this.smoothingLower;
-      if (Array.isArray(fp.emotion)) fp.emotion.forEach((v, i) => { this.emotionVector[i] = v; });
+      this.faceParams = fp
+      this.smoothingUpper = fp.upper_face_smoothing ?? this.smoothingUpper
+      this.smoothingLower = fp.lower_face_smoothing ?? this.smoothingLower
+      if (Array.isArray(fp.emotion)) fp.emotion.forEach((v, i) => { this.emotionVector[i] = v })
     }
     if (np) {
-      this.skinSize = np.num_shapes_skin ?? this.skinSize;
-      this.tongueSize = np.num_shapes_tongue ?? this.tongueSize;
-      this.tongueOffset = this.skinSize;
-      this.jawOffset = this.tongueOffset + this.tongueSize;
-      this.jawSize = np.result_jaw_size ?? this.jawSize;
-      this.eyesOffset = this.jawOffset + this.jawSize;
-      this.eyesSize = np.result_eyes_size ?? this.eyesSize;
+      this.skinSize = np.num_shapes_skin ?? this.skinSize
+      this.tongueSize = np.num_shapes_tongue ?? this.tongueSize
+      this.tongueOffset = this.skinSize
+      this.jawOffset = this.tongueOffset + this.tongueSize
+      this.jawSize = np.result_jaw_size ?? this.jawSize
+      this.eyesOffset = this.jawOffset + this.jawSize
+      this.eyesSize = np.result_eyes_size ?? this.eyesSize
     }
     if (bp) {
-      this.bsWeightMultipliers = bp.bsWeightMultipliers ?? null;
-      this.bsWeightOffsets = bp.bsWeightOffsets ?? null;
-      this.bsSolveActivePoses = bp.bsSolveActivePoses ?? null;
+      this.bsWeightMultipliers = bp.bsWeightMultipliers ?? null
+      this.bsWeightOffsets = bp.bsWeightOffsets ?? null
+      this.bsSolveActivePoses = bp.bsSolveActivePoses ?? null
     }
   }
 
   async loadConfigFile(configPath) {
-    const fs = await import('fs');
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    this.loadConfig(config);
-    return config;
-  }
-
-  async loadModel(modelFile, options = {}) {
-    let modelBuffer;
-    const fs = await import('fs');
-    
-    if (modelFile instanceof ArrayBuffer) {
-      modelBuffer = modelFile;
-    } else if (Buffer.isBuffer(modelFile)) {
-      modelBuffer = modelFile.buffer.slice(modelFile.byteOffset, modelFile.byteOffset + modelFile.byteLength);
-    } else if (typeof modelFile === 'string') {
-      const buf = fs.readFileSync(modelFile);
-      modelBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    } else {
-      throw new Error('Model must be a file path string, ArrayBuffer, or Buffer');
-    }
-
-    const os = await import('os');
-    const numThreads = options.threads || os.cpus().length;
-    const sessionOpts = {
-      executionProviders: ['dml', 'cpu'],
-      graphOptimizationLevel: 'all',
-      enableCpuMemArena: true,
-      enableMemPattern: true,
-      executionMode: 'parallel',
-      intraOpNumThreads: numThreads,
-      interOpNumThreads: Math.max(2, Math.floor(numThreads / 4)),
-    };
-
-    try {
-      this.session = await this.ort.InferenceSession.create(modelBuffer, sessionOpts);
-    } catch (err) {
-      console.warn('GPU failed, falling back to CPU:', err.message);
-      sessionOpts.executionProviders = ['cpu'];
-      this.session = await this.ort.InferenceSession.create(modelBuffer, sessionOpts);
-    }
-    return this.session;
-  }
-
-  async loadSolveData(dir) {
-    const fs = await import('fs');
-    const path = await import('path');
-    const solvePath = path.join(dir, 'solve_data.npz');
-    
-    if (!fs.existsSync(solvePath)) {
-      console.log('[a2f] solve_data.npz not found, using direct inference');
-      return;
-    }
-    
-    console.log('[a2f] Loading solve_data.npz...');
-    const { loadNpz } = await import('./audio2afan_npz.mjs');
-    const data = await loadNpz(solvePath);
-    
-    this._solveData = {
-      D: data.D,
-      D_pinv: data.D_pinv,
-      neutral: data.neutral,
-      pcaMean: data.pca_mean,
-      pcaBasis: data.pca_basis,
-      frontalMask: data.frontal_mask
-    };
-    
-    console.log('[a2f] Solve data loaded, D_pinv shape:', data.D_pinv.shape);
-  }
-
-  reconstructVertices(pcaCoeffs) {
-    if (!this._solveData) return null;
-    const { pcaMean, pcaBasis } = this._solveData;
-    const stride = 61520 * 3;
-    const vertices = new Float32Array(pcaMean);
-    const limit = Math.min(pcaCoeffs.length, this.skinSize);
-    for (let i = 0; i < limit; i++) {
-      const c = pcaCoeffs[i];
-      if (Math.abs(c) < 1e-6) continue;
-      const basis = pcaBasis.subarray(i * stride, (i + 1) * stride);
-      for (let j = 0; j < stride; j++) {
-        vertices[j] += basis[j] * c;
-      }
-    }
-    return vertices;
-  }
-
-  solveBlendshapes(vertices) {
-    if (!this._solveData || !this._solveData.D_pinv) return null;
-    const { D_pinv, neutral, frontalMask } = this._solveData;
-    const numFrontal = frontalMask.length;
-    const targetLen = numFrontal * 3;
-    const target = new Float32Array(targetLen);
-    for (let i = 0; i < numFrontal; i++) {
-      const vi = frontalMask[i];
-      const ti = i * 3, vj = vi * 3;
-      target[ti] = vertices[vj] - neutral[vj];
-      target[ti + 1] = vertices[vj + 1] - neutral[vj + 1];
-      target[ti + 2] = vertices[vj + 2] - neutral[vj + 2];
-    }
-    const weights = new Float32Array(52);
-    for (let b = 0; b < 52; b++) {
-      const row = D_pinv.subarray(b * targetLen, (b + 1) * targetLen);
-      let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
-      const len4 = targetLen & ~3;
-      for (let i = 0; i < len4; i += 4) {
-        s0 += row[i] * target[i];
-        s1 += row[i + 1] * target[i + 1];
-        s2 += row[i + 2] * target[i + 2];
-        s3 += row[i + 3] * target[i + 3];
-      }
-      let sum = s0 + s1 + s2 + s3;
-      for (let i = len4; i < targetLen; i++) sum += row[i] * target[i];
-      weights[b] = sum > 1 ? 1 : sum < 0 ? 0 : sum;
-    }
-    return weights;
+    const fs = await import('fs')
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    this.loadConfig(config)
+    return config
   }
 
   setEmotion(name, value) {
-    const idx = EXPLICIT_EMOTIONS.indexOf(name);
-    if (idx === -1) throw new Error(`Unknown emotion: ${name}. Valid: ${EXPLICIT_EMOTIONS.join(', ')}`);
-    this.emotionVector[idx] = clamp(value);
+    const idx = EXPLICIT_EMOTIONS.indexOf(name)
+    if (idx === -1) throw new Error(`Unknown emotion: ${name}. Valid: ${EXPLICIT_EMOTIONS.join(', ')}`)
+    this.emotionVector[idx] = clamp(value)
   }
+  setEmotions(obj) { for (const [k, v] of Object.entries(obj)) this.setEmotion(k, v) }
+  getEmotionVector() { return new Float32Array(this.emotionVector) }
 
-  setEmotions(obj) { for (const [k, v] of Object.entries(obj)) this.setEmotion(k, v); }
-  getEmotionVector() { return new Float32Array(this.emotionVector); }
-
-  _initTensorCache() {
-    const names = this.session.inputNames;
-    this._audioKey = names.includes('audio') ? 'audio' : names.includes('input') ? 'input' : names[0];
-    this._hasEmotion = names.includes('emotion');
-    this._audioBuf = new Float32Array(this.bufferLen);
-    this._audioTensor = new this.ort.Tensor('float32', this._audioBuf, [1, 1, this.bufferLen]);
-    if (this._hasEmotion)
-      this._emotionTensor = new this.ort.Tensor('float32', new Float32Array(26), [1, 1, 26]);
-  }
-
-  async runInference(audioChunk) {
-    if (!this.session) throw new Error('No session loaded. Call loadModel() first.');
-    if (!this._audioKey) this._initTensorCache();
-    const feeds = {};
-    if (audioChunk.length === this._audioBuf.length) {
-      this._audioBuf.set(audioChunk);
-      feeds[this._audioKey] = this._audioTensor;
-    } else {
-      feeds[this._audioKey] = new this.ort.Tensor('float32', audioChunk, [1, 1, audioChunk.length]);
+  _applyWeightMaps(vec) {
+    if (!this.bsWeightMultipliers && !this.bsWeightOffsets && !this.bsSolveActivePoses) return vec
+    const out = new Float32Array(vec.length)
+    for (let i = 0; i < vec.length; i++) {
+      let v = vec[i]
+      if (this.bsWeightMultipliers) v *= this.bsWeightMultipliers[i] ?? 1
+      if (this.bsWeightOffsets) v += this.bsWeightOffsets[i] ?? 0
+      if (this.bsSolveActivePoses && !this.bsSolveActivePoses[i]) v = 0
+      out[i] = clamp(v)
     }
-    if (this._hasEmotion) {
-      this._emotionTensor.data.set(this.emotionVector);
-      feeds.emotion = this._emotionTensor;
-    }
-    return this.parseOutputs(await this.session.run(feeds));
+    return out
   }
 
-  parseOutputs(outputs) {
-    const data = outputs[this.session.outputNames[0]].data;
-    
-    if (this._solveData) {
-      const pcaCoeffs = new Float32Array(data.slice(this.skinOffset, this.skinOffset + this.skinSize));
-      const vertices = this.reconstructVertices(pcaCoeffs);
-      const weights = this.solveBlendshapes(vertices);
-      
-      const blendshapes = new Array(52);
-      for (let i = 0; i < 52; i++) {
-        let val = clamp(weights[i]);
-        if (this.bsWeightMultipliers) val *= this.bsWeightMultipliers[i] ?? 1;
-        if (this.bsWeightOffsets) val += this.bsWeightOffsets[i] ?? 0;
-        if (this.bsSolveActivePoses && !this.bsSolveActivePoses[i]) val = 0;
-        blendshapes[i] = { name: ARKIT_BLENDSHAPES[i], value: clamp(val) };
+  // Text-driven path: produces fixed-fps Float32Array[52] frames suitable for AFAN.
+  // Returns: Array<Float32Array(52)>
+  processText(text, durationMs, { lang = 'en', fps } = {}) {
+    const f = fps || this.fps
+    const frames = this._sdk.processText(text, durationMs, { lang, fps: f })
+    return frames.map(v => this._applyWeightMaps(v))
+  }
+
+  // Build AFAN binary buffer from Float32Array[52] frames.
+  buildAfan(frames, fps) { return buildAfanBuf(frames, fps || this.fps) }
+
+  // Convenience: text → AFAN buffer in one call.
+  textToAfan(text, durationMs, opts = {}) {
+    const fps = opts.fps || this.fps
+    return this.buildAfan(this.processText(text, durationMs, { ...opts, fps }), fps)
+  }
+
+  // Audio-chunk path: kept for streaming compat. Without word timestamps we infer
+  // duration from sample count and emit a neutral frame per chunk window.
+  // Real lipsync arrives via processText() once the matching text is known.
+  async processAudioChunk(audioData, options = {}) {
+    while (this._chunkLock) await this._chunkLock
+    let unlock
+    this._chunkLock = new Promise(r => { unlock = r })
+    try {
+      if (options.emotion) this.setEmotions(options.emotion)
+      if (audioData && audioData.length > 0) this._ringAppend(audioData)
+      if (this._ringLen < this.bufferLen) return this.lastResult || this.getEmptyResult()
+      this._ringConsume(this.bufferOfs)
+      let result
+      if (options.text) {
+        const durMs = (this.bufferLen / this.sampleRate) * 1000
+        const frames = this.processText(options.text, durMs, { lang: options.lang, fps: this.fps })
+        const vec = frames[0] || emptyVec()
+        result = this._frameToResult(vec)
+      } else {
+        result = this._frameToResult(this._applyWeightMaps(emptyVec()))
       }
-      
-      const jawVerts = data.slice(this.jawOffset, this.jawOffset + 15);
-      const leftBackY = jawVerts[1], rightBackY = jawVerts[4];
-      const leftFrontY = jawVerts[7], rightFrontY = jawVerts[10], centerFrontY = jawVerts[13];
-      const leftFrontZ = jawVerts[8], rightFrontZ = jawVerts[11], centerFrontZ = jawVerts[14];
-      
-      const jawOpen = clamp(-centerFrontY * 0.8);
-      const jawForward = clamp(centerFrontZ * 0.5 + 0.5);
-      
-      blendshapes[24] = { name: 'jawOpen', value: jawOpen };
-      blendshapes[25] = { name: 'jawForward', value: jawForward };
-      
-      const eo = this.eyesOffset;
-      return {
-        blendshapes, jaw: jawOpen, timestamp: Date.now(),
-        eyes: { leftX: data[eo] || 0, leftY: data[eo + 1] || 0, rightX: data[eo + 2] || 0, rightY: data[eo + 3] || 0 }
-      };
-    }
-    
-    const numBs = Math.min(ARKIT_BLENDSHAPES.length, this.skinSize);
-    const blendshapes = new Array(numBs);
-    for (let i = 0; i < numBs; i++) {
-      let val = clamp(sigmoid(data[this.skinOffset + i] * 0.1));
-      if (this.bsWeightMultipliers) val *= this.bsWeightMultipliers[i] ?? 1;
-      if (this.bsWeightOffsets) val += this.bsWeightOffsets[i] ?? 0;
-      if (this.bsSolveActivePoses && !this.bsSolveActivePoses[i]) val = 0;
-      blendshapes[i] = { name: ARKIT_BLENDSHAPES[i], value: clamp(val) };
-    }
-    const jaw = clamp(sigmoid((data[this.jawOffset] || 0) * 0.1));
-    const eo = this.eyesOffset;
+      if (this.lastResult)
+        result.blendshapes = this.smoothBlendshapes(this.lastResult.blendshapes, result.blendshapes)
+      this.lastResult = result
+      return result
+    } finally { this._chunkLock = null; unlock() }
+  }
+
+  _frameToResult(vec) {
     return {
-      blendshapes, jaw, timestamp: Date.now(),
-      eyes: { leftX: data[eo] || 0, leftY: data[eo + 1] || 0, rightX: data[eo + 2] || 0, rightY: data[eo + 3] || 0 }
-    };
+      blendshapes: vecToBlendshapes(vec),
+      jaw: clamp(vec[24] || 0),
+      eyes: { leftX: 0, leftY: 0, rightX: 0, rightY: 0 },
+      timestamp: Date.now(),
+    }
+  }
+
+  // Deprecated ONNX entry points — preserved so legacy callers fail loudly with
+  // a clear message instead of mysterious undefined-method errors.
+  async loadModel() { throw new Error('Audio2FaceCore: loadModel() removed. Use processText() / processAudioChunk({text}).') }
+  async loadSolveData() { throw new Error('Audio2FaceCore: loadSolveData() removed. Lipsync runs without NPZ solve data.') }
+  async runInference(audioData) {
+    if (!this.session) throw new Error('No session loaded. Call loadModel() first.')
+    return this._frameToResult(emptyVec())
   }
 
   _ringAppend(audioData) {
-    const needed = this._ringLen + audioData.length;
+    const needed = this._ringLen + audioData.length
     if (needed > this._ring.length) {
-      const newCap = Math.max(needed * 2, RING_CAPACITY);
-      const grown = new Float32Array(newCap);
-      grown.set(this._ring.subarray(0, this._ringLen));
-      this._ring = grown;
+      const newCap = Math.max(needed * 2, RING_CAPACITY)
+      const grown = new Float32Array(newCap)
+      grown.set(this._ring.subarray(0, this._ringLen))
+      this._ring = grown
     }
-    this._ring.set(audioData, this._ringLen);
-    this._ringLen += audioData.length;
+    this._ring.set(audioData, this._ringLen)
+    this._ringLen += audioData.length
   }
-
   _ringConsume(len) {
-    this._ring.copyWithin(0, len, this._ringLen);
-    this._ringLen -= len;
-  }
-
-  async processAudioChunk(audioData, options = {}) {
-    if (!this.session) throw new Error('No session loaded. Call loadModel() first.');
-    while (this._chunkLock) await this._chunkLock;
-    let unlock;
-    this._chunkLock = new Promise(r => { unlock = r; });
-    try {
-      if (options.emotion) this.setEmotions(options.emotion);
-      if (audioData.length > 0) this._ringAppend(audioData);
-      if (this._ringLen < this.bufferLen) return this.lastResult || this.getEmptyResult();
-      const chunk = this._ring.slice(0, this.bufferLen);
-      this._ringConsume(this.bufferOfs);
-      const result = await this.runInference(chunk);
-      if (this.lastResult)
-        result.blendshapes = this.smoothBlendshapes(this.lastResult.blendshapes, result.blendshapes);
-      this.lastResult = result;
-      return result;
-    } finally { this._chunkLock = null; unlock(); }
+    this._ring.copyWithin(0, len, this._ringLen)
+    this._ringLen -= len
   }
 
   smoothBlendshapes(prev, curr) {
-    if (!prev || !curr || prev.length !== curr.length) return curr;
+    if (!prev || !curr || prev.length !== curr.length) return curr
     return curr.map((bs, i) => {
-      const f = i <= UPPER_FACE_MAX ? this.smoothingUpper : this.smoothingLower;
-      return { name: bs.name, value: prev[i].value * f + bs.value * (1 - f) };
-    });
+      const f = i <= UPPER_FACE_MAX ? this.smoothingUpper : this.smoothingLower
+      return { name: bs.name, value: prev[i].value * f + bs.value * (1 - f) }
+    })
   }
 
   aggregateResults(results) {
-    if (!results.length) return this.getEmptyResult();
+    if (!results.length) return this.getEmptyResult()
     const blendshapes = results[0].blendshapes.map((bs, i) => ({
       name: bs.name, value: results.reduce((a, r) => a + r.blendshapes[i].value, 0) / results.length
-    }));
+    }))
     return {
       blendshapes, frameCount: results.length,
       jaw: results.reduce((a, r) => a + r.jaw, 0) / results.length,
       eyes: results[results.length - 1].eyes
-    };
+    }
   }
 
   getEmptyResult() {
-    return { blendshapes: ARKIT_BLENDSHAPES.map(name => ({ name, value: 0 })), jaw: 0, eyes: null, timestamp: Date.now() };
+    return { blendshapes: ARKIT_BLENDSHAPES.map(name => ({ name, value: 0 })), jaw: 0, eyes: null, timestamp: Date.now() }
   }
 
   resampleAudio(audioData, fromRate, toRate) {
-    const ratio = toRate / fromRate, newLen = Math.floor(audioData.length * ratio);
-    const result = new Float32Array(newLen);
+    const ratio = toRate / fromRate, newLen = Math.floor(audioData.length * ratio)
+    const result = new Float32Array(newLen)
     for (let i = 0; i < newLen; i++) {
-      const pos = i / ratio, idx = Math.floor(pos), frac = pos - idx;
-      result[i] = idx >= audioData.length - 1 ? audioData[audioData.length - 1] : audioData[idx] * (1 - frac) + audioData[idx + 1] * frac;
+      const pos = i / ratio, idx = Math.floor(pos), frac = pos - idx
+      result[i] = idx >= audioData.length - 1 ? audioData[audioData.length - 1] : audioData[idx] * (1 - frac) + audioData[idx + 1] * frac
     }
-    return result;
+    return result
   }
 
-  setSmoothing(factor) { this.smoothingUpper = this.smoothingLower = clamp(factor); }
-
+  setSmoothing(factor) { this.smoothingUpper = this.smoothingLower = clamp(factor) }
   setSmoothingRegion(region, factor) {
-    if (region === 'upper') this.smoothingUpper = clamp(factor);
-    else if (region === 'lower') this.smoothingLower = clamp(factor);
-    else throw new Error(`Unknown region: ${region}. Valid: upper, lower`);
+    if (region === 'upper') this.smoothingUpper = clamp(factor)
+    else if (region === 'lower') this.smoothingLower = clamp(factor)
+    else throw new Error(`Unknown region: ${region}. Valid: upper, lower`)
   }
 
   dispose() {
-    try { if (this.session) this.session.release(); } catch (_) {}
-    this.session = null;
-    this._ring = new Float32Array(RING_CAPACITY);
-    this._ringLen = 0;
-    this.lastResult = null;
-    this._audioKey = null;
-    this._hasEmotion = false;
-    this._audioBuf = null;
-    this._audioTensor = null;
-    this._emotionTensor = null;
-    this._solveData = null;
+    this.session = null
+    this._ring = new Float32Array(RING_CAPACITY)
+    this._ringLen = 0
+    this.lastResult = null
+    this._audioKey = null
+    this._hasEmotion = false
   }
 }
 
-export default Audio2FaceCore;
+export default Audio2FaceCore

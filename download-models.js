@@ -5,10 +5,6 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const REQUIRED = {
-  audio2afan: {
-    dir: path.join(__dirname, 'models', 'audio2afan'),
-    files: ['config.json', 'model.onnx', 'bs_skin.npz', 'implicit_emo_db.npz', 'model_data.npz', 'solve_data.npz'],
-  },
   tts: {
     dir: path.join(__dirname, 'models', 'tts'),
     files: ['flow_lm_flow_int8.onnx', 'flow_lm_main_int8.onnx', 'mimi_decoder_int8.onnx', 'mimi_encoder.onnx', 'text_conditioner.onnx', 'tokenizer.model'],
