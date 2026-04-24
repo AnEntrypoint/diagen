@@ -60,7 +60,7 @@ The browser demo and Discord voice integration use **Whisper** (OpenAI) for spee
 
 ### Node.js / Discord Voice
 
-**Implementation**: `discord-whisper.js` module using `@xenova/transformers` library.
+**Implementation**: `discord-whisper.js` module using `@huggingface/transformers` v4 library. Previously used `@xenova/transformers` v2, migrated due to a broken nested `sharp` native binding on Windows (crashed Discord init at startup). v4 uses top-level sharp and shares the same underlying ONNX runtime.
 
 **Model**: `Xenova/whisper-tiny` (39MB quantized ONNX)
 - Lightweight inference-optimized version of Whisper
@@ -85,6 +85,8 @@ const result = await transcribe(pcmBuffer, 48000);
 **First Call**: Downloads model (~39MB) from HuggingFace on first transcribe() call. Cached thereafter.
 
 Alternative models available: `Xenova/whisper-small` (74MB), `Xenova/whisper-base` (137MB), `Xenova/whisper-medium` (308MB). Change in `discord-whisper.js` initPipeline() if needed.
+
+**v4 API note**: use `pipeline(task, model, { dtype: 'q8' })` instead of v2's `{ quantized: true }`. Local model cache layout `models/whisper/Xenova/whisper-base/` is compatible with v4's `env.localModelPath` + repo_id resolution.
 
 ## TTS — Pocket TTS WASM with Voice Cloning
 
@@ -367,7 +369,7 @@ The bot's own TTS audio is masked from re-entering whisper via `_botSpeakingUnti
 
 ### Whisper Stream — Warm Worker Pool, Per-User Sessions
 
-**Module**: `whisper-stream.js` — single warm `@xenova/transformers` Whisper pipeline shared across all per-user sessions. Sessions are a `Map` keyed by userId; each holds the rolling PCM buffer, debounced re-transcription scheduling (200ms), and stability detection (350ms). **No spawn/teardown** of workers per speaker — only `clear(userId)` to drop accumulated audio.
+**Module**: `whisper-stream.js` — single warm `@huggingface/transformers` v4 Whisper pipeline shared across all per-user sessions. Sessions are a `Map` keyed by userId; each holds the rolling PCM buffer, debounced re-transcription scheduling (200ms), and stability detection (350ms). **No spawn/teardown** of workers per speaker — only `clear(userId)` to drop accumulated audio.
 
 ### Observability — `/debug/speak-gate`
 
@@ -389,7 +391,7 @@ The bot's own TTS audio is masked from re-entering whisper via `_botSpeakingUnti
 
 ### Dependencies
 
-Added: `discord.js`, `@discordjs/voice`, `prism-media`, `@xenova/transformers`, `dispipe`
+Added: `discord.js`, `@discordjs/voice`, `prism-media`, `@huggingface/transformers`, `dispipe`
 
 ### dispipe Audio Format — Critical Pitfalls
 
