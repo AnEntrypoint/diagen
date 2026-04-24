@@ -120,65 +120,61 @@ transformer.layers.{i}.self_attn/current_end
 
 - **HTML-poisoned cache**: GitHub Pages 404 responses are HTML (`<!DOCTYPE html>`) and can be large enough to pass a byte-size check. The cache bust must also check the first byte: `new Uint8Array(buf.slice(0,1))[0] === 0x3C` means HTML, delete it.
 
-## TTS — Server-Side: Qwen3-TTS via faster-qwen3-tts
+## TTS — Chatterbox Turbo (ResembleAI, ONNX via @huggingface/transformers)
 
-Discord voice and server-side text-to-speech use **Qwen3-TTS-12Hz-0.6B-Base** (Apache 2.0, Alibaba/QwenLM) wrapped by the **faster-qwen3-tts** community package (CUDA graph capture for low-latency streaming). Browser demo is unrelated and stays on Pocket TTS WASM (no browser runtime exists for Qwen3-TTS).
+Both server-side and browser demo now use **Chatterbox Turbo** (ResembleAI) for text-to-speech. Chatterbox is ONNX-based, eliminating the subprocess overhead of previous Python bridges.
 
-### Setup
+### Node.js / Discord Voice
 
-Requires Python 3.10+, NVIDIA GPU with CUDA, PyTorch 2.5.1+. Installation:
-```bash
-pip install -U faster-qwen3-tts
-```
+**Implementation**: `chatterbox-tts-bridge.js` module using `@huggingface/transformers` v4 (NOT v2 — v2 lacks ChatterboxModel).
 
-On first synthesis call, downloads ~2.1GB of weights from HuggingFace to `~/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-0.6B-Base/`. Subsequent process starts reuse the cache.
-
-### Architecture
-
-**Node.js→Python bridge**: `qwen3-tts-bridge.js` spawns a persistent Python subprocess (`qwen3_tts_server.py`) speaking JSON over stdin/stdout.
-
+**Speaker Pre-Encoding**:
+Before any synthesis call, encode a reference voice once via `setRefVoice(wavPath)`:
 ```javascript
-import { synthesize, synthesizeStream } from './qwen3-tts-bridge.js'
+import { setRefVoice, synthesize, synthesizeStream } from './chatterbox-tts-bridge.js'
 
-// One-shot — returns { audio: Float32Array, sampleRate: 24000 }
-const { audio, sampleRate } = await synthesize('hello world', refAudioPath, refText, signal)
-
-// Streaming — onChunk fires per audio chunk during generation
-await synthesizeStream(text, refAudioPath, refText, (chunk, sr) => { /* play */ }, signal)
+await setRefVoice('/path/to/voices/cleetus.wav')
+const { audio, sampleRate } = await synthesize('hello world', _refPath, _refText, signal)
 ```
 
-The bridge serializes calls via an internal queue chain, supports AbortSignal-driven cancellation, and reconnects on subprocess exit.
+- `setRefVoice(wavPath)` decodes WAV → monoFloat32Array, calls `model.encode_speech(Tensor('float32', monoFloat32, [1, samples.length]))`, caches embedding
+- `_refPath` and `_refText` parameters ignored (speaker pre-encoded via `setRefVoice`)
+- Output: `{ audio: Float32Array, sampleRate: 24000 }`
+- Streaming via `synthesizeStream(text, _refPath, _refText, onChunk?, signal?)`
 
-### Voice Cloning
+**API Contract** (backward-compatible with old Qwen3 bridge):
+```javascript
+const { audio, sampleRate } = await synthesize(text, _unused, _unused, signal)
+await synthesizeStream(text, _unused, _unused, (chunk, sr) => { /* play */ }, signal)
+```
 
-Voice clone REQUIRES BOTH `ref_audio` (WAV path) AND `ref_text` (transcript of the reference). The Python server auto-loads a sidecar `.txt` next to the ref WAV — `voices/cleetus.wav` pairs with `voices/cleetus.txt`. Set defaults via env:
-
-- `QWEN3_TTS_DEFAULT_REF` — WAV path (default: `voices/cleetus.wav`)
-- `QWEN3_TTS_DEFAULT_REF_TEXT` — overrides sidecar
-- `QWEN3_TTS_LANGUAGE` — default `English`
-- `QWEN3_TTS_CHUNK_SIZE` — streaming chunk size (default 12)
-- `QWEN3_TTS_PYTHON` — interpreter (default `python`)
-- `QWEN3_TTS_STARTUP_MS` — startup timeout (default 1200000 to allow first download)
-- `QWEN3_TTS_SYNTH_MS` — per-synth timeout (default 120000)
-
-### Performance (RTX 3060 Laptop GPU, witnessed)
-
-- Process start (cached weights): ~23s + first call ~13–15s (one-time CUDA graph capture for predictor + talker)
-- Warm streaming: first chunk ~700–850ms, total ~1.3× realtime
-- Warm one-shot: ~1.8× realtime
-- Output: 24000 Hz Int16 PCM (decoded to Float32 in the bridge)
-
-The subprocess server prints model warmup status to stdout; the server permanently rebinds `sys.stdout` to `sys.stderr` after startup so library prints do not poison the JSON IPC channel.
-
-### Integration Points
-
-- **Discord voice pipeline** (`speak-gate.js` SPEAKING stage): pipes the answering LLM output through `synthesizeStream`, sink-pushes resampled stereo via `pushAudioFrame`
+**Integration Points**:
+- **Discord voice pipeline** (`speak-gate.js` SPEAKING stage): pipes LLM output through `synthesizeStream`, upmixes mono→stereo, pushes via `pushAudioFrame`
 - **Web demo API** (`/api/generate` in `server.js`): one-shot `synthesize` for facial animation flow
 
-### Switching back to a different engine
+**Observability**: `GET /debug/tts` returns `{ modelLoaded, speakerEncoded, loading }`
 
-If `faster-qwen3-tts` breaks (it is a community fork), the official `qwen-tts` package implements the same `Qwen3TTSModel` API but lacks the streaming wrapper — `generate_voice_clone_streaming` would have to be replaced with one-shot `generate_voice_clone` calls in `qwen3_tts_server.py`. The bridge contract stays unchanged.
+### Browser Demo
 
+**Implementation**: `gh-pages-src/demo/worker.js` loads `@huggingface/transformers` v4.2.0 from CDN:
+```
+https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm
+```
+
+**Speaker Encoding** (browser-side):
+```javascript
+const wavBuffer = await fetch('./voices/cleetus.wav').then(r => r.arrayBuffer())
+const audioCtx = new OfflineAudioContext(1, 48000, 48000)
+const audioBuffer = await audioCtx.decodeAudioData(wavBuffer)
+const monoF32 = audioBuffer.getChannelData(0)
+await model.encode_speech(new Tensor('float32', monoF32, [1, monoF32.length]))
+```
+
+**Sample Rate**: 24000 Hz (Chatterbox native). Output Float32Array.
+
+**Why Chatterbox**: ONNX (no subprocess), lightweight inference via transformers.js, same API contract as old Qwen3 bridge for drop-in replacement, browser-native (no Python runtime needed).
+
+**Backward Compatibility**: `qwen3-tts-bridge.js` and `qwen3_tts_server.py` preserved as B1 alternative if Chatterbox needs to be swapped back.
 ## node-llama-cpp — GPU Detection & Invocation Pitfall
 
 **Critical diagnostic lesson (witnessed 2026-04-22)**:
