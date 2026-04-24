@@ -1,18 +1,11 @@
-import { ChatterboxSDK, splitTextIntoChunks } from 'https://esm.sh/streamtts@latest'
+import { createTTSEngine, splitTextIntoChunks } from 'https://esm.sh/streamtts@latest'
 
 const MODEL_BASE_PATH = 'https://raw.githubusercontent.com/AnEntrypoint/streamtts/models/'
 const SAMPLE_RATE = 24000
 
-const tts = new ChatterboxSDK()
+const engine = createTTSEngine(self)
 let activeSpeakerId = null
 let aborted = false
-
-tts.onProgress((p) => {
-  if (p.status === 'progress') {
-    const pct = p.progress != null ? ` ${Math.round(p.progress)}%` : ''
-    self.postMessage({ type: 'status', status: `Loading: ${p.file}${pct}` })
-  }
-})
 
 async function loadVoice(voiceName) {
   self.postMessage({ type: 'status', status: `Encoding speaker: ${voiceName}` })
@@ -21,7 +14,7 @@ async function loadVoice(voiceName) {
   const audioCtx = new OfflineAudioContext(1, 1, SAMPLE_RATE)
   const decoded = await audioCtx.decodeAudioData(await resp.arrayBuffer())
   const mono = decoded.getChannelData(0)
-  await tts.encodeSpeaker(voiceName, mono)
+  await engine.encodeSpeaker(voiceName, mono)
   activeSpeakerId = voiceName
   self.postMessage({ type: 'loaded' })
 }
@@ -29,12 +22,11 @@ async function loadVoice(voiceName) {
 async function generate(text) {
   if (!activeSpeakerId) throw new Error('No speaker encoded — load a voice first')
   aborted = false
-  const chunks = splitTextIntoChunks(text)
-  for (const chunk of chunks) {
+  for (const chunk of splitTextIntoChunks(text)) {
     if (aborted) break
-    const { waveform } = await tts.generate(chunk.text, activeSpeakerId, 0.5)
+    const waveform = await engine.generate(chunk.text, activeSpeakerId)
     if (aborted) break
-    const buf = waveform.buffer
+    const buf = waveform.buffer.slice(waveform.byteOffset, waveform.byteOffset + waveform.byteLength)
     self.postMessage({ type: 'audio_chunk', data: buf }, [buf])
   }
   if (!aborted) self.postMessage({ type: 'stream_ended' })
@@ -45,8 +37,15 @@ self.onmessage = async (e) => {
   try {
     if (type === 'load') {
       self.postMessage({ type: 'status', status: 'Loading Chatterbox Turbo model…' })
-      await tts.configure({ modelBasePath: MODEL_BASE_PATH, allowRemoteModels: false })
-      const info = await tts.load()
+      engine.configure({ modelBasePath: MODEL_BASE_PATH, allowRemoteModels: false })
+      const info = await engine.load({
+        onProgress: (p) => {
+          if (p.status === 'progress') {
+            const pct = p.progress != null ? ` ${Math.round(p.progress)}%` : ''
+            self.postMessage({ type: 'status', status: `Loading: ${p.file}${pct}` })
+          }
+        },
+      })
       self.postMessage({ type: 'status', status: `Model loaded (${info.device})` })
       const manifest = await fetch('./voices/manifest.json').then((r) => r.json())
       const voices = manifest.map((f) => f.replace('.wav', ''))
@@ -57,7 +56,6 @@ self.onmessage = async (e) => {
       await generate(data?.text ?? e.data.data?.text)
     } else if (type === 'cancel') {
       aborted = true
-      tts.abort()
     }
   } catch (err) {
     self.postMessage({ type: 'error', error: err.message })
