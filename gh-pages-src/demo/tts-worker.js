@@ -1,7 +1,40 @@
-import { ChatterboxModel, AutoProcessor, Tensor } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm'
+import { ChatterboxModel, AutoProcessor, Tensor, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm'
+
+env.localModelPath = './model/chatterbox/'
+env.allowRemoteModels = false
 
 const MODEL_ID = 'ResembleAI/chatterbox-turbo-ONNX'
+const MODEL_BASE = env.localModelPath + MODEL_ID + '/'
 const SAMPLE_RATE = 24000
+let chunkManifest = null
+
+const _origFetch = self.fetch.bind(self)
+
+async function getChunkManifest() {
+  if (chunkManifest) return chunkManifest
+  const resp = await _origFetch(MODEL_BASE + 'chunks.json')
+  if (!resp.ok) throw new Error('chunks.json fetch failed: ' + resp.status)
+  chunkManifest = await resp.json()
+  return chunkManifest
+}
+
+self.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url
+  const manifest = await getChunkManifest().catch(() => [])
+  const entry = manifest.find(e => url.endsWith('/' + e.file) || url.endsWith(e.file.replace(/\//g, '/')))
+  if (!entry) return _origFetch(input, init)
+  const parts = await Promise.all(
+    Array.from({ length: entry.parts }, (_, i) => _origFetch(url + '.part' + i).then(r => {
+      if (!r.ok) throw new Error('chunk fetch failed: ' + url + '.part' + i + ' ' + r.status)
+      return r.arrayBuffer()
+    }))
+  )
+  const total = parts.reduce((s, b) => s + b.byteLength, 0)
+  const merged = new Uint8Array(total)
+  let off = 0
+  for (const b of parts) { merged.set(new Uint8Array(b), off); off += b.byteLength }
+  return new Response(merged.buffer, { status: 200, headers: { 'Content-Type': 'application/octet-stream' } })
+}
 
 let model = null
 let processor = null

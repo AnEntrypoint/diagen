@@ -18,6 +18,25 @@ The browser demo uses Qwen3.5-VL 0.8B abliterated with identity-override LoRA me
 - Quantization: q4 via MatMulNBitsQuantizer (decoder), fp16 (embed_tokens, WebGPU), q8 (vision_encoder)
 - Delivery: raw git blobs split into ≤99MB chunks served from GitHub Pages. No LFS on this path — LFS would break Pages delivery.
 
+### Local Model Path Resolution — @huggingface/transformers v4
+
+The browser loads bundled ONNX models from local paths instead of HuggingFace Hub via `env` configuration:
+
+```javascript
+import { env } from '@huggingface/transformers';
+env.allowRemoteModels = false;  // Force local-only, disable Hub fallback
+env.localModelPath = './model/chatterbox/';  // Base directory for all models
+```
+
+Path resolution: `finalPath = pathJoin(env.localModelPath, repo_id, filename)`
+
+Example:
+- Config: `env.localModelPath = './model/chatterbox/'`
+- Call: `from_pretrained('ResembleAI/chatterbox-turbo-ONNX')`
+- Resolves: `./model/chatterbox/ResembleAI/chatterbox-turbo-ONNX/onnx/embed_tokens_q4f16.onnx`
+
+The resolved URL goes through browser `fetch()`, where the Service Worker or fetch interceptor in `gh-pages-src/demo/worker.js` intercepts it and reassembles bundled `.part*` chunks on-demand. This pattern allows delivering large ONNX models as locally-bundled files without a CDN, staying under GitHub's per-file limits.
+
 ## Dependencies
 
 - `sttttsmodels` is a local file dep (`file:../sttttsmodels`). Clone it as a sibling directory or `npm install` will fail.

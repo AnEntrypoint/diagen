@@ -1,5 +1,7 @@
 
 ## [unreleased]
+- feat(ci): pages.yml downloads ResembleAI/chatterbox-turbo-ONNX at build time via huggingface_hub; splits 3 oversized .onnx_data files (155-175MB) into ≤99MB .part* chunks; writes chunks.json manifest. Browser demo loads models locally with no CDN dependency at runtime.
+- feat(browser): tts-worker.js sets env.localModelPath + env.allowRemoteModels=false; fetch interceptor reads chunks.json and reassembles .part* chunks transparently before ONNX runtime sees the data
 - feat: replace Qwen3-TTS Python bridge with Chatterbox Turbo (ResembleAI/chatterbox-turbo-ONNX) via @huggingface/transformers v4 — no Python subprocess, Node.js-native ONNX inference. New chatterbox-tts-bridge.js: pre-encodes speaker WAV once at setRefVoice(), synthesize/synthesizeStream API matches old bridge contract. speak-gate.js and server.js updated.
 - feat(browser): replace Pocket TTS WASM worker with Chatterbox Turbo WebGPU/WASM worker — @huggingface/transformers v4 from CDN, voice cloning from voices/*.wav, streams audio_chunk messages per sentence chunk, same app-tts.js protocol
 - fix: whisper-stream.js isSentinel() now filters parenthesized sentinel outputs like "(upbeat music)" alongside [...] and *...* patterns. Prevents sentinel annotations from triggering speak-gate state transitions.
