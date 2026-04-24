@@ -88,51 +88,6 @@ Alternative models available: `Xenova/whisper-small` (74MB), `Xenova/whisper-bas
 
 **v4 API note**: use `pipeline(task, model, { dtype: 'q8' })` instead of v2's `{ quantized: true }`. Local model cache layout `models/whisper/Xenova/whisper-base/` is compatible with v4's `env.localModelPath` + repo_id resolution.
 
-## TTS — Pocket TTS WASM with Voice Cloning
-
-The browser demo uses **Pocket TTS** (Kyutai Labs) compiled to WebAssembly for fast, on-device text-to-speech.
-
-### Built-in Voices
-7 pre-recorded voices from Kyutai: alba, marius, javert, fantine, cosette, eponine, azelma. Voice embeddings loaded from HuggingFace (`kyutai/pocket-tts-without-voice-cloning/embeddings_v2/`).
-
-### Custom Voice Cloning
-Custom voices (cleetus, vampire) are pre-encoded as KV cache states in `.safetensors` format:
-
-**Encoding pipeline (`ci/encode-voices/src/main.rs`):**
-1. Downloads `kyutai/pocket-tts` model weights via HuggingFace hub
-2. Reads WAV files, resamples to 24kHz mono (up to 10s)
-3. Runs mimi encoder → voice embeddings
-4. Runs `prompt_audio` → fills transformer KV caches
-5. Saves 6 layers of k+v caches as `.safetensors`
-
-**Browser loading:**
-```javascript
-// Built-in voices
-model.add_voice(fetchBufWithCache(`${HF_BASE}/embeddings_v2/${name}.safetensors`))
-
-// Custom voices (pre-encoded)
-model.add_voice(fetchBufWithCache(`./voices/${name}.safetensors`))
-```
-
-### GitHub Actions: `encode-voices.yml`
-Triggers when WAV files in `gh-pages-src/demo/voices/` change. Clones `LaurentMazare/xn`, builds `ci/encode-voices` Rust binary, runs it, commits `.safetensors`. Can also run manually via `workflow_dispatch`.
-
-### Adding New Custom Voices
-1. Record WAV (10-30 sec, any sample rate)
-2. Place in `gh-pages-src/demo/voices/`
-3. Update `manifest.json` with filename
-4. Commit → workflow auto-encodes and pushes
-
-### KV Cache Format
-Each `.safetensors` contains pre-computed attention caches for 6 transformer layers:
-```
-transformer.layers.{i}.self_attn/cache
-  Shape: [2, 1, seq_len, num_heads, head_dim] (k and v caches)
-  Type: float32
-transformer.layers.{i}.self_attn/current_end
-  Shape: [1], position in cache
-```
-
 ## Browser Worker — ONNX Loading Pitfalls
 
 - **transformers.js filename construction**: with `dtype: 'q4f16'` (string) and `model_file_name: 'model_q4f16'`, transformers.js requests `model_q4f16_q4f16.onnx` (base + `_` + dtype). The fetch interceptor CHUNKS key must match this exact URL suffix.
@@ -177,25 +132,22 @@ await synthesizeStream(text, _unused, _unused, (chunk, sr) => { /* play */ }, si
 
 ### Browser Demo
 
-**Implementation**: `gh-pages-src/demo/worker.js` loads `@huggingface/transformers` v4.2.0 from CDN:
-```
-https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm
-```
+**Implementation**: `gh-pages-src/demo/tts-worker.js` uses the external [`streamtts`](https://github.com/AnEntrypoint/streamtts) package (imported from esm.sh). `streamtts` wraps Chatterbox Turbo for in-browser synthesis with streaming and speaker encoding.
 
 **Speaker Encoding** (browser-side):
 ```javascript
-const wavBuffer = await fetch('./voices/cleetus.wav').then(r => r.arrayBuffer())
-const audioCtx = new OfflineAudioContext(1, 48000, 48000)
-const audioBuffer = await audioCtx.decodeAudioData(wavBuffer)
-const monoF32 = audioBuffer.getChannelData(0)
-await model.encode_speech(new Tensor('float32', monoF32, [1, monoF32.length]))
+const resp = await fetch(`./voices/${voiceName}.wav`)
+const audioCtx = new OfflineAudioContext(1, 1, 24000)
+const decoded = await audioCtx.decodeAudioData(await resp.arrayBuffer())
+await engine.encodeSpeaker(voiceName, decoded.getChannelData(0))
 ```
 
 **Sample Rate**: 24000 Hz (Chatterbox native). Output Float32Array.
 
-**Why Chatterbox**: ONNX (no subprocess), lightweight inference via transformers.js, same API contract as old Qwen3 bridge for drop-in replacement, browser-native (no Python runtime needed).
+**Why Chatterbox**: ONNX (no subprocess), ~350M params (Turbo variant), lightweight inference via transformers.js, browser-native (no Python runtime needed).
 
-**Backward Compatibility**: `qwen3-tts-bridge.js` and `qwen3_tts_server.py` preserved as B1 alternative if Chatterbox needs to be swapped back.
+**Browser TTS** is now delivered via the external [`streamtts`](https://github.com/AnEntrypoint/streamtts) package (loaded from esm.sh), which wraps Chatterbox Turbo with streaming and speaker encoding. `gh-pages-src/demo/tts-worker.js` is a thin wrapper around `streamtts`. WebGPU optimizations (e.g. int64→int32 cast from `spacekaren/chatterbox-turbo-webgpu`) belong upstream in `streamtts`, not this repo.
+
 ## node-llama-cpp — GPU Detection & Invocation Pitfall
 
 **Critical diagnostic lesson (witnessed 2026-04-22)**:
@@ -339,7 +291,7 @@ SPEAKING  ─[done]→         history(full), → LISTENING
 
 **Two-stage LLM**:
 1. **GATING** — single grammar-constrained call returning `YES` or `NO`. Grammar `root ::= "YES" | "NO"` built via `buildGrammar()` from `llm-llamacpp.js` (must use the same `getLlama()` instance that loaded the model — `LlamaGrammar` instance must match the session's instance, otherwise `node-llama-cpp` throws). The gating prompt asks: should the bot speak now?
-2. **ANSWERING** — full LLM call only fired when GATING returned YES, then piped into `synthesizeStream` from `qwen3-tts-bridge.js`.
+2. **ANSWERING** — full LLM call only fired when GATING returned YES, then piped into `synthesizeStream` from `chatterbox-tts-bridge.js`.
 
 **Per-stage AbortController + timeouts** (env-tunable): `GATE_TIMEOUT_GATING_MS=5000`, `GATE_TIMEOUT_ANSWER_MS=15000`, `GATE_TIMEOUT_SPEAKING_MS=30000`. A whisper word arriving during any post-LISTENING stage aborts the in-flight stage and snaps to WAITING.
 
