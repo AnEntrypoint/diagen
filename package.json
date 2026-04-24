@@ -16,6 +16,7 @@
   "description": "",
   "dependencies": {
     "@discordjs/voice": "^0.19.2",
+    "@huggingface/transformers": "^4.2.0",
     "@mlc-ai/web-llm": "^0.2.82",
     "@pixiv/three-vrm": "^3.4.5",
     "@xenova/transformers": "^2.6.5",

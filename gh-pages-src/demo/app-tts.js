@@ -1,6 +1,6 @@
 import { setMouthOpen } from './vrm-viewer.js'
 
-const ttsWorker = new Worker('./tts-worker.js?v=5', { type: 'module' })
+const ttsWorker = new Worker('./tts-worker.js?v=6', { type: 'module' })
 let ttsReady = false, ttsLoading = false
 let ttsReadyResolvers = [], ttsStreamResolve = null, ttsStreamReject = null
 let audioCtx = null, nextAt = 0, analyser = null, rafId = null

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { encodeWAV, buildAfan } from './server-utils.mjs'
 import { LipsyncSDKNode, estimateWordTimings, trackToFrames } from '../a2f/lipsync-sdk-node.mjs'
-import { synthesize as synthesizeTTS } from './qwen3-tts-bridge.js'
+import { synthesize as synthesizeTTS, setRefVoice as chatterboxSetRef } from './chatterbox-tts-bridge.js'
 import { generate as generateLLM, isAvailable as isLLMAvailable } from './llm-llamacpp.js'
 import os from 'os'
 
@@ -107,6 +107,7 @@ async function loadVoiceEmbedding() {
     console.warn('[voice] No voice file found at', CLEETUS_WAV)
     return null
   }
+  await chatterboxSetRef(CLEETUS_WAV)
   console.log('[voice] Voice reference loaded:', CLEETUS_WAV)
   voiceEmbedding = CLEETUS_WAV
   return voiceEmbedding
@@ -233,6 +234,15 @@ app.get('/debug/speak-gate', async (req, res) => {
   }
 })
 
+app.get('/debug/tts', async (req, res) => {
+  try {
+    const { getDebugState } = await import('./chatterbox-tts-bridge.js')
+    res.json(getDebugState())
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.get('/debug/discord', (req, res) => {
   if (!getDebugState) return res.status(503).json({ error: 'Discord not enabled' })
   try {
@@ -287,11 +297,12 @@ async function start() {
   // first user utterance is already at warm-streaming latency (~700ms first chunk)
   if (process.env.WARMUP_TTS !== 'false') {
     try {
-      console.log('[server] Warming up Qwen3-TTS (first call captures CUDA graphs)...')
+      console.log('[server] Warming up Chatterbox TTS (model load + speaker encode)...')
       const warmupStart = performance.now()
-      await synthesizeTTS('Server starting', CLEETUS_WAV, null)
+      await chatterboxSetRef(CLEETUS_WAV)
+      await synthesizeTTS('Server starting', null, null)
       const warmupTime = ((performance.now() - warmupStart) / 1000).toFixed(1)
-      console.log(`[server] TTS warmup complete (${warmupTime}s) - subsequent calls will be fast`)
+      console.log(`[server] TTS warmup complete (${warmupTime}s)`)
     } catch (err) {
       console.warn('[server] TTS warmup failed (non-critical):', err.message)
     }

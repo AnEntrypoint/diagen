@@ -1,5 +1,5 @@
 import { generate as generateLLM, isAvailable as isLLMAvailable, buildGrammar } from './llm-llamacpp.js'
-import { synthesizeStream } from './qwen3-tts-bridge.js'
+import { synthesizeStream, setRefVoice as _setRefVoice } from './chatterbox-tts-bridge.js'
 import { resampleAudio } from './server-utils.mjs'
 
 const SAMPLE_RATE_DISCORD = 48000
@@ -164,7 +164,10 @@ export function noteWhisperWord({ userId, username, text }) {
   transitions[state.name]?.onWhisperWord?.()
 }
 
-export function setRefVoice(refPath, refText) { state.refPath = refPath; state.refText = refText }
+export function setRefVoice(refPath, refText) {
+  state.refPath = refPath; state.refText = refText
+  if (refPath) _setRefVoice(refPath).catch(err => console.error('[gate] setRefVoice failed:', err.message))
+}
 export function setCharacterCardPrompt(prompt) { state.characterPrompt = prompt }
 export function setAudioSink(fn) { state.audioSink = fn }
 export function clearHistory() { state.history.length = 0; console.log('[gate] history cleared') }
