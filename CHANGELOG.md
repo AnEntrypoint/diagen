@@ -1,5 +1,6 @@
 
 ## [unreleased]
+- fix(ci): pages.yml snapshot_download now uses allow_patterns to fetch only q4 (wasm) + q4f16 (webgpu) ONNX variants. Prior full snapshot was ~4.3GB and caused git push HTTP 500 during gh-pages deploy. Chunker walks the onnx/ dir for any *.onnx_data > 99MB (no longer hardcoded to fixed filenames, so variant-suffixed files are handled automatically).
 - feat(pages): migrate gh-pages-src to design system — sync colors_and_type.css + app-shell.css from c:/dev/design; both index.html and demo/index.html now use .app/.app-topbar/.app-main/.app-status shell; drop var(--border) (incompatible with border:0 reset); update tts receipt entry to chatterbox turbo
 - feat(ci): pages.yml downloads ResembleAI/chatterbox-turbo-ONNX at build time via huggingface_hub; splits 3 oversized .onnx_data files (155-175MB) into ≤99MB .part* chunks; writes chunks.json manifest. Browser demo loads models locally with no CDN dependency at runtime.
 - feat(browser): tts-worker.js sets env.localModelPath + env.allowRemoteModels=false; fetch interceptor reads chunks.json and reassembles .part* chunks transparently before ONNX runtime sees the data

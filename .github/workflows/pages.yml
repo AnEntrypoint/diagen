@@ -31,35 +31,45 @@ jobs:
           from huggingface_hub import snapshot_download
 
           dest = 'gh-pages-src/demo/model/chatterbox'
+          model_dir = os.path.join(dest, 'ResembleAI/chatterbox-turbo-ONNX')
+          # Only download the q4 (wasm) and q4f16 (webgpu) variants we actually use.
+          # Full snapshot is ~4.3GB which overwhelms git push to gh-pages (HTTP 500).
           snapshot_download(
             repo_id='ResembleAI/chatterbox-turbo-ONNX',
-            local_dir=os.path.join(dest, 'ResembleAI/chatterbox-turbo-ONNX'),
-            ignore_patterns=['*.msgpack', '*.h5', 'flax_model*', 'tf_model*', 'rust_model*'],
+            local_dir=model_dir,
+            allow_patterns=[
+              '*.json',
+              'onnx/embed_tokens_q4.onnx', 'onnx/embed_tokens_q4.onnx_data',
+              'onnx/embed_tokens_q4f16.onnx', 'onnx/embed_tokens_q4f16.onnx_data',
+              'onnx/speech_encoder_q4.onnx', 'onnx/speech_encoder_q4.onnx_data',
+              'onnx/speech_encoder_q4f16.onnx', 'onnx/speech_encoder_q4f16.onnx_data',
+              'onnx/language_model_q4.onnx', 'onnx/language_model_q4.onnx_data',
+              'onnx/language_model_q4f16.onnx', 'onnx/language_model_q4f16.onnx_data',
+              'onnx/conditional_decoder_q4.onnx', 'onnx/conditional_decoder_q4.onnx_data',
+              'onnx/conditional_decoder_q4f16.onnx', 'onnx/conditional_decoder_q4f16.onnx_data',
+            ],
           )
 
           CHUNK = 99 * 1024 * 1024
-          CHUNKED = {
-            'onnx/conditional_decoder.onnx_data',
-            'onnx/language_model.onnx_data',
-            'onnx/speech_encoder.onnx_data',
-          }
-          model_dir = os.path.join(dest, 'ResembleAI/chatterbox-turbo-ONNX')
           manifest = []
-          for rel in CHUNKED:
-            src = os.path.join(model_dir, rel)
-            if not os.path.exists(src):
-              raise FileNotFoundError(f'Expected model file missing: {src}')
-            size = os.path.getsize(src)
-            n = math.ceil(size / CHUNK)
-            with open(src, 'rb') as f:
-              for i in range(n):
-                data = f.read(CHUNK)
-                part_path = f'{src}.part{i}'
-                with open(part_path, 'wb') as pf:
-                  pf.write(data)
-            os.remove(src)
-            manifest.append({'file': rel, 'parts': n, 'size': size})
-            print(f'chunked {rel}: {size} bytes → {n} parts')
+          for root, _, files in os.walk(os.path.join(model_dir, 'onnx')):
+            for fname in files:
+              if not fname.endswith('.onnx_data'):
+                continue
+              src = os.path.join(root, fname)
+              size = os.path.getsize(src)
+              if size <= CHUNK:
+                continue
+              rel = os.path.relpath(src, model_dir).replace(os.sep, '/')
+              n = math.ceil(size / CHUNK)
+              with open(src, 'rb') as f:
+                for i in range(n):
+                  data = f.read(CHUNK)
+                  with open(f'{src}.part{i}', 'wb') as pf:
+                    pf.write(data)
+              os.remove(src)
+              manifest.append({'file': rel, 'parts': n, 'size': size})
+              print(f'chunked {rel}: {size} bytes -> {n} parts')
           import json
           with open(os.path.join(model_dir, 'chunks.json'), 'w') as f:
             json.dump(manifest, f)
