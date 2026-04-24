@@ -84,10 +84,10 @@ jobs:
           git config http.lowSpeedLimit 0
           git config http.lowSpeedTime 600
           cp -r gh-pages-src /tmp/gh-pages-publish
-          git fetch origin gh-pages || true
-          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
-          cp -r /tmp/gh-pages-publish/. .
+          # Publish a clean orphan commit containing only gh-pages-src contents.
+          # Avoids non-fast-forward races and prevents source-tree leakage into the branch.
+          cd /tmp/gh-pages-publish
+          git init -q -b gh-pages
           git add -A
-          git diff --cached --quiet && echo "No changes" && exit 0
-          git commit -m "deploy: ${{ github.sha }}"
-          git push origin gh-pages
+          git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -q -m "deploy: ${{ github.sha }}"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages:gh-pages

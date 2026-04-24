@@ -1,5 +1,6 @@
 
 ## [unreleased]
+- fix(ci): pages.yml deploy step now publishes gh-pages-src as an orphan branch with force-push. Prior approach checked out main's gh-pages, overlaid files, and pushed — this leaked server source files into the branch and hit non-fast-forward rejections when runs raced.
 - fix(pages): vendor design-system fonts (Archivo, Archivo Narrow, JetBrains Mono, Space Grotesk) to gh-pages-src/design/vendor/fonts/ + fonts.css; link from both index.html and demo/index.html so ff-display / ff-mono resolve to real webfonts instead of falling back to Times New Roman on the landing page.
 - fix(ci): pages.yml snapshot_download now uses allow_patterns to fetch only q4 (wasm) + q4f16 (webgpu) ONNX variants. Prior full snapshot was ~4.3GB and caused git push HTTP 500 during gh-pages deploy. Chunker walks the onnx/ dir for any *.onnx_data > 99MB (no longer hardcoded to fixed filenames, so variant-suffixed files are handled automatically).
 - feat(pages): migrate gh-pages-src to design system — sync colors_and_type.css + app-shell.css from c:/dev/design; both index.html and demo/index.html now use .app/.app-topbar/.app-main/.app-status shell; drop var(--border) (incompatible with border:0 reset); update tts receipt entry to chatterbox turbo
