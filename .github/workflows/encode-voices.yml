@@ -23,8 +23,15 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install deps
-        run: bun install --frozen-lockfile
+      - name: Install transformers.js (encoder-only, isolated from project deps)
+        run: |
+          mkdir -p .ci-encoder
+          cd .ci-encoder
+          echo '{"name":"diagen-encoder","type":"module","dependencies":{"@huggingface/transformers":"^4.2.0"}}' > package.json
+          bun install
+          cd ..
+          ln -sf .ci-encoder/node_modules node_modules
+          ls -la node_modules/@huggingface/
 
       - name: Run encoder
         run: bun run tools/encode-speakers.mjs
