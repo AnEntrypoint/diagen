@@ -4,7 +4,9 @@ const MODEL_ID = 'onnx-community/chatterbox-ONNX'
 const SAMPLE_RATE = 24000
 const TYPED_ARRAYS = { float32: Float32Array, int64: BigInt64Array }
 
-const DTYPE = { embed_tokens: 'q4f16', speech_encoder: 'q4f16', language_model: 'q4f16', conditional_decoder: 'q4f16' }
+// onnx-community/chatterbox-ONNX only ships q4f16/q4 for language_model; others are fp32
+const DTYPE_WEBGPU = { embed_tokens: 'fp32', speech_encoder: 'fp32', language_model: 'q4f16', conditional_decoder: 'fp32' }
+const DTYPE_WASM = { embed_tokens: 'fp32', speech_encoder: 'fp32', language_model: 'q4', conditional_decoder: 'fp32' }
 
 let model = null, processor = null
 let activeVoice = null
@@ -22,7 +24,7 @@ async function loadModel() {
   processor = await AutoProcessor.from_pretrained(MODEL_ID)
   model = await ChatterboxModel.from_pretrained(MODEL_ID, {
     device: useDevice,
-    dtype: DTYPE,
+    dtype: useDevice === 'webgpu' ? DTYPE_WEBGPU : DTYPE_WASM,
     progress_callback: (p) => {
       if (p.status === 'progress') {
         const pct = p.progress != null ? ` ${Math.round(p.progress)}%` : ''
