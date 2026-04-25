@@ -1,59 +1,84 @@
-import { createTTSEngine, splitTextIntoChunks } from 'https://esm.sh/streamtts@latest'
+import { ChatterboxModel, AutoProcessor, Tensor, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0'
 
-const MODEL_BASE_PATH = 'https://raw.githubusercontent.com/AnEntrypoint/streamtts/models/'
+const MODEL_ID = 'onnx-community/chatterbox-ONNX'
 const SAMPLE_RATE = 24000
+const TYPED_ARRAYS = { float32: Float32Array, int64: BigInt64Array }
 
-const engine = createTTSEngine(self)
-let activeSpeakerId = null
+const DTYPE = { embed_tokens: 'q4f16', speech_encoder: 'q4f16', language_model: 'q4f16', conditional_decoder: 'q4f16' }
+
+let model = null, processor = null
+let activeVoice = null
+let activeEmbeddings = null
 let aborted = false
 
-async function loadVoice(voiceName) {
-  self.postMessage({ type: 'status', status: `Encoding speaker: ${voiceName}` })
-  const resp = await fetch(`./voices/${voiceName}.wav`)
-  if (!resp.ok) throw new Error(`voice fetch failed: ${voiceName}.wav`)
-  const audioCtx = new OfflineAudioContext(1, 1, SAMPLE_RATE)
-  const decoded = await audioCtx.decodeAudioData(await resp.arrayBuffer())
-  const mono = decoded.getChannelData(0)
-  await engine.encodeSpeaker(voiceName, mono)
-  activeSpeakerId = voiceName
-  self.postMessage({ type: 'loaded' })
+async function checkWebGPU() {
+  if (typeof navigator === 'undefined' || !navigator.gpu) return false
+  try { return Boolean(await navigator.gpu.requestAdapter()) } catch { return false }
+}
+
+async function loadModel() {
+  const useDevice = (await checkWebGPU()) ? 'webgpu' : 'wasm'
+  self.postMessage({ type: 'status', status: `Loading model (${useDevice})…` })
+  processor = await AutoProcessor.from_pretrained(MODEL_ID)
+  model = await ChatterboxModel.from_pretrained(MODEL_ID, {
+    device: useDevice,
+    dtype: DTYPE,
+    progress_callback: (p) => {
+      if (p.status === 'progress') {
+        const pct = p.progress != null ? ` ${Math.round(p.progress)}%` : ''
+        self.postMessage({ type: 'status', status: `Loading: ${p.file}${pct}` })
+      }
+    },
+  })
+  return useDevice
+}
+
+async function loadVoice(name) {
+  const binResp = await fetch(`./voices/${name}.embedding.bin`)
+  const jsonResp = await fetch(`./voices/${name}.embedding.json`)
+  if (!binResp.ok || !jsonResp.ok) throw new Error(`voice ${name}: pre-encoded embedding not found (run tools/encode-speakers.mjs)`)
+  const manifest = await jsonResp.json()
+  const buf = new Uint8Array(await binResp.arrayBuffer())
+  const tensors = {}
+  for (const [key, meta] of Object.entries(manifest.tensors)) {
+    const Ctor = TYPED_ARRAYS[meta.dtype]
+    if (!Ctor) throw new Error(`unsupported dtype ${meta.dtype}`)
+    const slice = buf.buffer.slice(buf.byteOffset + meta.byteOffset, buf.byteOffset + meta.byteOffset + meta.byteLength)
+    tensors[key] = new Tensor(meta.dtype, new Ctor(slice), meta.dims)
+  }
+  activeVoice = name
+  activeEmbeddings = tensors
 }
 
 async function generate(text) {
-  if (!activeSpeakerId) throw new Error('No speaker encoded — load a voice first')
+  if (!model || !processor) throw new Error('Model not loaded')
+  if (!activeEmbeddings) throw new Error('Voice not loaded')
   aborted = false
-  for (const chunk of splitTextIntoChunks(text)) {
-    if (aborted) break
-    const waveform = await engine.generate(chunk.text, activeSpeakerId)
-    if (aborted) break
-    const buf = waveform.buffer.slice(waveform.byteOffset, waveform.byteOffset + waveform.byteLength)
-    self.postMessage({ type: 'audio_chunk', data: buf }, [buf])
-  }
-  if (!aborted) self.postMessage({ type: 'stream_ended' })
+  const inputs = await processor._call(text)
+  const waveform = await model.generate({ ...inputs, ...activeEmbeddings, exaggeration: 0.5, max_new_tokens: 256 })
+  if (aborted) return
+  const data = waveform.data
+  const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+  self.postMessage({ type: 'audio_chunk', data: buf }, [buf])
+  self.postMessage({ type: 'stream_ended' })
 }
 
 self.onmessage = async (e) => {
-  const { type, data } = e.data
+  const { type } = e.data
   try {
     if (type === 'load') {
-      self.postMessage({ type: 'status', status: 'Loading Chatterbox Turbo model…' })
-      engine.configure({ modelBasePath: MODEL_BASE_PATH, allowRemoteModels: false })
-      const info = await engine.load({
-        onProgress: (p) => {
-          if (p.status === 'progress') {
-            const pct = p.progress != null ? ` ${Math.round(p.progress)}%` : ''
-            self.postMessage({ type: 'status', status: `Loading: ${p.file}${pct}` })
-          }
-        },
-      })
-      self.postMessage({ type: 'status', status: `Model loaded (${info.device})` })
+      const device = await loadModel()
+      self.postMessage({ type: 'status', status: `Model loaded (${device})` })
       const manifest = await fetch('./voices/manifest.json').then((r) => r.json())
-      const voices = manifest.map((f) => f.replace('.wav', ''))
+      const voices = manifest.map((f) => f.replace(/\.wav$/, ''))
       self.postMessage({ type: 'voices_loaded', voices, defaultVoice: voices[0] || 'cleetus' })
     } else if (type === 'load_voice') {
-      await loadVoice(data?.voice ?? e.data.voice)
+      const name = e.data.voice
+      self.postMessage({ type: 'status', status: `Loading voice: ${name}` })
+      await loadVoice(name)
+      self.postMessage({ type: 'loaded' })
     } else if (type === 'generate') {
-      await generate(data?.text ?? e.data.data?.text)
+      await generate(e.data.data?.text ?? e.data.text)
     } else if (type === 'cancel') {
       aborted = true
     }
