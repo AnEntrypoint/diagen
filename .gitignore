@@ -37,6 +37,7 @@ logs/
 
 # gm skill working document
 .gm/
+rs-learn.db
 
 # Server runtime artifacts (detached spawn)
 .server.pid
