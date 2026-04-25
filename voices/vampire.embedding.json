@@ -1,0 +1,44 @@
+{
+  "sampleRate": 24000,
+  "generatedAt": "2026-04-25T17:44:03.938Z",
+  "tensors": {
+    "audio_features": {
+      "dtype": "float32",
+      "dims": [
+        1,
+        151,
+        1024
+      ],
+      "byteOffset": 0,
+      "byteLength": 618496
+    },
+    "audio_tokens": {
+      "dtype": "int64",
+      "dims": [
+        1,
+        250
+      ],
+      "byteOffset": 618496,
+      "byteLength": 2000
+    },
+    "speaker_embeddings": {
+      "dtype": "float32",
+      "dims": [
+        1,
+        192
+      ],
+      "byteOffset": 620496,
+      "byteLength": 768
+    },
+    "speaker_features": {
+      "dtype": "float32",
+      "dims": [
+        1,
+        500,
+        80
+      ],
+      "byteOffset": 621264,
+      "byteLength": 160000
+    }
+  }
+}
