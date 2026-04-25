@@ -4,6 +4,8 @@ import path from 'path'
 
 const SAMPLE_RATE = 24000
 const MAX_CHUNK_CHARS = 200
+const TENSOR_KEYS = ['audio_features', 'audio_tokens', 'speaker_embeddings', 'speaker_features']
+const TYPED_ARRAYS = { float32: Float32Array, int64: BigInt64Array }
 
 const ABBREVIATIONS = new Set([
   'mr','mrs','ms','dr','prof','sr','jr','st','ave','blvd',
@@ -46,26 +48,20 @@ function readWavMono(wavPath) {
   const channels = buf.readUInt16LE(22)
   const bitsPerSample = buf.readUInt16LE(34)
   let dataOffset = 44
-  if (buf.slice(36, 40).toString('ascii') !== 'data') {
-    dataOffset = buf.indexOf('data', 12) + 8
-  }
+  if (buf.slice(36, 40).toString('ascii') !== 'data') dataOffset = buf.indexOf('data', 12) + 8
   const dataLen = buf.readUInt32LE(dataOffset - 4)
   const numSamples = dataLen / (bitsPerSample / 8) / channels
   const mono = new Float32Array(numSamples)
   if (bitsPerSample === 16) {
     for (let i = 0; i < numSamples; i++) {
       let s = 0
-      for (let c = 0; c < channels; c++) {
-        s += buf.readInt16LE(dataOffset + (i * channels + c) * 2)
-      }
+      for (let c = 0; c < channels; c++) s += buf.readInt16LE(dataOffset + (i * channels + c) * 2)
       mono[i] = (s / channels) / 32768
     }
   } else if (bitsPerSample === 32) {
     for (let i = 0; i < numSamples; i++) {
       let s = 0
-      for (let c = 0; c < channels; c++) {
-        s += buf.readFloatLE(dataOffset + (i * channels + c) * 4)
-      }
+      for (let c = 0; c < channels; c++) s += buf.readFloatLE(dataOffset + (i * channels + c) * 4)
       mono[i] = s / channels
     }
   }
@@ -89,6 +85,7 @@ function resampleMono(audio, fromRate, toRate) {
 let model = null
 let processor = null
 let speakerEmbeddings = null
+let speakerSource = null
 let loadPromise = null
 
 async function ensureModel() {
@@ -105,12 +102,58 @@ async function ensureModel() {
   return loadPromise
 }
 
+function ensureProcessorOnly() {
+  if (processor) return Promise.resolve()
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      console.log('[chatterbox] loading processor + model (cache miss)...')
+      processor = await AutoProcessor.from_pretrained('ResembleAI/chatterbox-turbo-ONNX')
+      model = await ChatterboxModel.from_pretrained('ResembleAI/chatterbox-turbo-ONNX', {
+        dtype: { embed_tokens: 'q4f16', speech_encoder: 'q4f16', language_model: 'q4f16', conditional_decoder: 'q4f16' },
+      })
+      console.log('[chatterbox] model loaded')
+    })()
+  }
+  return loadPromise
+}
+
+function loadCachedEmbedding(wavPath) {
+  const dir = path.dirname(wavPath)
+  const name = path.basename(wavPath).replace(/\.wav$/, '')
+  const binPath = path.join(dir, `${name}.embedding.bin`)
+  const jsonPath = path.join(dir, `${name}.embedding.json`)
+  if (!fs.existsSync(binPath) || !fs.existsSync(jsonPath)) return null
+  const wavStat = fs.statSync(wavPath)
+  const binStat = fs.statSync(binPath)
+  if (binStat.mtimeMs < wavStat.mtimeMs) return null
+  const manifest = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+  const buf = fs.readFileSync(binPath)
+  const tensors = {}
+  for (const key of TENSOR_KEYS) {
+    const meta = manifest.tensors[key]
+    if (!meta) throw new Error(`manifest missing tensor ${key}`)
+    const Ctor = TYPED_ARRAYS[meta.dtype]
+    if (!Ctor) throw new Error(`unsupported dtype ${meta.dtype}`)
+    const slice = buf.buffer.slice(buf.byteOffset + meta.byteOffset, buf.byteOffset + meta.byteOffset + meta.byteLength)
+    tensors[key] = new Tensor(meta.dtype, new Ctor(slice), meta.dims)
+  }
+  return tensors
+}
+
 export async function setRefVoice(wavPath) {
+  const cached = loadCachedEmbedding(wavPath)
+  if (cached) {
+    speakerEmbeddings = cached
+    speakerSource = 'cache'
+    console.log(`[chatterbox] speaker loaded from cache: ${path.basename(wavPath)}.embedding.bin`)
+    await ensureProcessorOnly()
+    return
+  }
   await ensureModel()
   const { audio, sampleRate } = readWavMono(wavPath)
   const resampled = resampleMono(audio, sampleRate, SAMPLE_RATE)
-  const tensor = new Tensor('float32', resampled, [1, resampled.length])
-  speakerEmbeddings = await model.encode_speech(tensor)
+  speakerEmbeddings = await model.encode_speech(new Tensor('float32', resampled, [1, resampled.length]))
+  speakerSource = 'fresh-encode'
   console.log(`[chatterbox] speaker encoded from ${path.basename(wavPath)}`)
 }
 
@@ -160,6 +203,7 @@ export function getDebugState() {
   return {
     modelLoaded: Boolean(model && processor),
     speakerEncoded: Boolean(speakerEmbeddings),
+    speakerSource,
     loading: Boolean(loadPromise && !(model && processor)),
   }
 }
