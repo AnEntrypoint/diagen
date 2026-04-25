@@ -128,25 +128,43 @@ await synthesizeStream(text, _unused, _unused, (chunk, sr) => { /* play */ }, si
 - **Discord voice pipeline** (`speak-gate.js` SPEAKING stage): pipes LLM output through `synthesizeStream`, upmixes mono→stereo, pushes via `pushAudioFrame`
 - **Web demo API** (`/api/generate` in `server.js`): one-shot `synthesize` for facial animation flow
 
-**Observability**: `GET /debug/tts` returns `{ modelLoaded, speakerEncoded, loading }`
+**Observability**: `GET /debug/tts` returns `{ modelLoaded, speakerEncoded, speakerSource, loading }`. `speakerSource` is `'cache'` (loaded from .embedding.bin) or `'fresh-encode'` (ran encode_speech).
+
+### Pre-Encoded Speaker Embeddings
+
+The `speech_encoder` submodel is the most expensive runtime step for new voices (~5-15s per WAV). We avoid it at runtime by pre-computing speaker tensors offline and committing them next to the WAV.
+
+**Encoder**: `tools/encode-speakers.mjs`. Iterates `voices/*.wav`, runs `model.encode_speech()`, serializes the 4-tensor output (`audio_features` float32, `audio_tokens` int64, `speaker_embeddings` float32, `speaker_features` float32) into:
+- `voices/<name>.embedding.bin` — concatenated raw bytes
+- `voices/<name>.embedding.json` — manifest `{ tensors: { <key>: { dtype, dims, byteOffset, byteLength } } }`
+
+Idempotent on mtime: skips if `.bin` is newer than `.wav`.
+
+**CI**: `.github/workflows/encode-voices.yml` runs the encoder when `voices/*.wav` or `tools/encode-speakers.mjs` changes; commits results back to main. Workflow installs only `@huggingface/transformers` into an isolated `.ci-encoder/` dir to avoid the `file:../dispipe` sibling dep that breaks `bun install --frozen-lockfile` on CI.
+
+**Server-side bridge** (`chatterbox-tts-bridge.js`): `setRefVoice(wavPath)` first looks for `<name>.embedding.bin` + `.embedding.json` next to the WAV. If present and bin mtime ≥ wav mtime, deserialize tensors directly into `speakerEmbeddings` — full `speech_encoder` execution skipped. Else fall back to live encode and write cache for next time.
 
 ### Browser Demo
 
-**Implementation**: `gh-pages-src/demo/tts-worker.js` uses the external [`streamtts`](https://github.com/AnEntrypoint/streamtts) package (imported from esm.sh). `streamtts` wraps Chatterbox Turbo for in-browser synthesis with streaming and speaker encoding.
+**Implementation**: `gh-pages-src/demo/tts-worker.js` calls `@huggingface/transformers` v4 directly (loaded from jsDelivr). No streamtts dependency.
 
-**Speaker Encoding** (browser-side):
+**Speaker loading** (browser-side): no longer calls `encode_speech` at runtime. Worker fetches `./voices/<name>.embedding.bin` + `./voices/<name>.embedding.json` from gh-pages, deserializes the 4 tensors per the manifest, and passes them as `audio_features` / `audio_tokens` / `speaker_embeddings` / `speaker_features` directly to `model.generate()`. `pages.yml` copies the embedding files alongside WAVs into the deploy.
+
 ```javascript
-const resp = await fetch(`./voices/${voiceName}.wav`)
-const audioCtx = new OfflineAudioContext(1, 1, 24000)
-const decoded = await audioCtx.decodeAudioData(await resp.arrayBuffer())
-await engine.encodeSpeaker(voiceName, decoded.getChannelData(0))
+const buf = new Uint8Array(await (await fetch(`./voices/${name}.embedding.bin`)).arrayBuffer())
+const manifest = await (await fetch(`./voices/${name}.embedding.json`)).json()
+const tensors = {}
+for (const [key, meta] of Object.entries(manifest.tensors)) {
+  const Ctor = meta.dtype === 'float32' ? Float32Array : BigInt64Array
+  const slice = buf.buffer.slice(buf.byteOffset + meta.byteOffset, buf.byteOffset + meta.byteOffset + meta.byteLength)
+  tensors[key] = new Tensor(meta.dtype, new Ctor(slice), meta.dims)
+}
+// later: await model.generate({ ...inputs, ...tensors, exaggeration: 0.5, max_new_tokens: 256 })
 ```
 
 **Sample Rate**: 24000 Hz (Chatterbox native). Output Float32Array.
 
-**Why Chatterbox**: ONNX (no subprocess), ~350M params (Turbo variant), lightweight inference via transformers.js, browser-native (no Python runtime needed).
-
-**Browser TTS** is now delivered via the external [`streamtts`](https://github.com/AnEntrypoint/streamtts) package (loaded from esm.sh), which wraps Chatterbox Turbo with streaming and speaker encoding. `gh-pages-src/demo/tts-worker.js` is a thin wrapper around `streamtts`. WebGPU optimizations (e.g. int64→int32 cast from `spacekaren/chatterbox-turbo-webgpu`) belong upstream in `streamtts`, not this repo.
+**Why Chatterbox**: ONNX (no subprocess), ~350M params (Turbo variant), lightweight inference via transformers.js, browser-native (no Python runtime needed). Among TTS models supported by transformers.js v4, Chatterbox is the only one with zero-shot WAV-based voice cloning — all alternatives (SpeechT5, Kokoro, Supertonic, StyleTTS2) require pre-fit speaker embeddings, no zero-shot WAV input.
 
 ## node-llama-cpp — GPU Detection & Invocation Pitfall
 
