@@ -87,8 +87,13 @@ export async function generate(prompt, system = 'You are a helpful assistant. Be
     console.log(`[llamacpp] gen ${Date.now()-t0}ms chars=${out.length}`)
     return out
   } catch (err) {
-    if (err.name === 'AbortError') { console.log(`[llamacpp] aborted after ${Date.now()-t0}ms`); throw err }
-    console.error(`[llamacpp] error after ${Date.now()-t0}ms:`, err.message)
+    if (signal?.aborted || err?.name === 'AbortError') {
+      console.log(`[llamacpp] aborted after ${Date.now()-t0}ms`)
+      const e = err instanceof Error ? err : new Error('aborted')
+      e.name = 'AbortError'
+      throw e
+    }
+    console.error(`[llamacpp] error after ${Date.now()-t0}ms:`, err?.message || err)
     throw err
   } finally {
     signal?.removeEventListener?.('abort', onAbort)
