@@ -87,6 +87,7 @@ async function forceClearBotVoiceState(guildId) {
   }
 }
 
+let _reconnectInFlight = false
 async function connectToVoiceChannel(guildId, channelId) {
   if (!discordClient) throw new Error('Discord bot not initialized')
   if (!isConnected) throw new Error('Discord bot not ready')
@@ -111,6 +112,35 @@ async function connectToVoiceChannel(guildId, channelId) {
     console.error('[discord] voice connection error:', err?.message || err)
     lastError.value = { message: `voice: ${err?.message || err}`, timestamp: Date.now() }
   })
+
+  let _wsCloseCount = 0
+  let _wsCloseWindowStart = Date.now()
+  voiceConnection.on('stateChange', (oldState, newState) => {
+    const newNet = newState.networking
+    if (!newNet || newNet === oldState.networking) return
+    newNet.on?.('close', async (evt) => {
+      const code = typeof evt === 'object' ? (evt.code ?? evt) : evt
+      lastVoiceCloseCode.value = code
+      lastVoiceCloseCode.reason = typeof evt === 'object' ? evt.reason?.toString?.() : null
+      if (code !== 4006) return
+      const now = Date.now()
+      if (now - _wsCloseWindowStart > 30000) { _wsCloseCount = 0; _wsCloseWindowStart = now }
+      _wsCloseCount++
+      if (_wsCloseCount < 3 || _reconnectInFlight) return
+      _reconnectInFlight = true
+      console.log(`[discord] WS 4006 storm detected (${_wsCloseCount} closes) — forcing full reconnect with REST clear`)
+      try { voiceConnection.destroy() } catch {}
+      try {
+        await new Promise(r => setTimeout(r, 2000))
+        await connectToVoiceChannel(guildId, channelId)
+      } catch (err) {
+        console.error('[discord] forced reconnect failed:', err.message)
+      } finally {
+        _reconnectInFlight = false
+      }
+    })
+  })
+
   console.log('[discord] Connected to voice channel')
 
   initVoicePlayer(voiceConnection)
