@@ -10,9 +10,11 @@
   <meta name="description" content="diagen. real-time ai voice bot. listen, think, speak, animate. built in public.">
   <meta name="author" content="247420 / AnEntrypoint">
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./design/vendor/fonts.css">
-  <link rel="stylesheet" href="./design/colors_and_type.css">
-  <link rel="stylesheet" href="./design/app-shell.css">
+  <script type="module">
+    import { installStyles } from 'https://unpkg.com/anentrypoint-design/dist/247420.js';
+    installStyles();
+    document.documentElement.classList.add('ds-247420');
+  </script>
   <style>
     section { padding: 48px 32px; }
     section + section { box-shadow: 0 -1px 0 var(--panel-2); }

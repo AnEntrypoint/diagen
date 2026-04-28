@@ -10,9 +10,11 @@
   <script>window.coi = { coepCredentialless: () => true }</script>
   <script src="./coi-serviceworker.js"></script>
   <link rel="icon" type="image/svg+xml" href="../favicon.svg">
-  <link rel="stylesheet" href="../design/vendor/fonts.css">
-  <link rel="stylesheet" href="../design/colors_and_type.css">
-  <link rel="stylesheet" href="../design/app-shell.css">
+  <script type="module">
+    import { installStyles } from 'https://unpkg.com/anentrypoint-design/dist/247420.js';
+    installStyles();
+    document.documentElement.classList.add('ds-247420');
+  </script>
   <style>
     .stage {
       max-width: 760px; margin: 0 auto;
