@@ -39,7 +39,7 @@ The resolved URL goes through browser `fetch()`, where the Service Worker or fet
 
 ## Dependencies
 
-- `sttttsmodels` is a local file dep (`file:../sttttsmodels`). Clone it as a sibling directory or `npm install` will fail.
+- `dispipe` is published on npm (`^1.0.2`). No sibling clone needed.
 - `audio2afan` postinstall download: redundant now (weights ship in-repo via LFS). Safe to ignore or disable with `npm install --ignore-scripts`. `download-models.js` just verifies presence.
 
 ## Testing
