@@ -17,6 +17,8 @@ let _lastError = null
 let _botSpeakingUntil = 0
 let _usernameResolver = (uid) => `user${String(uid).slice(-4)}`
 const _skippedFrames = new Map()
+const _audioOut = { sinkInvocations: 0, totalSamples: 0, lastInvokeAt: 0, lastError: null }
+export function getAudioOutStats() { return { ..._audioOut } }
 
 export function setUsernameResolver(fn) { _usernameResolver = fn }
 
@@ -24,12 +26,23 @@ export function init(processingQueue, lastErrorRef) {
   _processingQueue = processingQueue
   _lastError = lastErrorRef
   speakGate.setAudioSink((monoChunk, _text) => {
-    const stereo = new Float32Array(monoChunk.length * 2)
-    for (let i = 0; i < monoChunk.length; i++) { stereo[i * 2] = monoChunk[i]; stereo[i * 2 + 1] = monoChunk[i] }
-    const durMs = (monoChunk.length / SAMPLE_RATE) * 1000
-    const base = Math.max(_botSpeakingUntil, Date.now())
-    _botSpeakingUntil = base + durMs + BOT_SPEAK_TAIL_MS
-    pushAudioFrame(stereo)
+    try {
+      const stereo = new Float32Array(monoChunk.length * 2)
+      for (let i = 0; i < monoChunk.length; i++) { stereo[i * 2] = monoChunk[i]; stereo[i * 2 + 1] = monoChunk[i] }
+      const durMs = (monoChunk.length / SAMPLE_RATE) * 1000
+      const base = Math.max(_botSpeakingUntil, Date.now())
+      _botSpeakingUntil = base + durMs + BOT_SPEAK_TAIL_MS
+      pushAudioFrame(stereo)
+      _audioOut.sinkInvocations++
+      _audioOut.totalSamples += monoChunk.length
+      _audioOut.lastInvokeAt = Date.now()
+      if (_audioOut.sinkInvocations <= 3 || _audioOut.sinkInvocations % 25 === 0) {
+        console.log(`[vad] audio sink #${_audioOut.sinkInvocations} samples=${monoChunk.length} dur=${durMs.toFixed(0)}ms`)
+      }
+    } catch (err) {
+      _audioOut.lastError = { message: err.message, at: Date.now() }
+      console.error('[vad] audio sink error:', err.message)
+    }
   })
   console.log(`[vad] init mode=state-machine activeRms=${ACTIVE_RMS}`)
 }

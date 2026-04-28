@@ -3,7 +3,7 @@ import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from '
 import { initVoicePlayer } from 'dispipe/voice'
 
 const lastVoiceCloseCode = { value: null, reason: null }
-import { onPcmChunk, init as initVad, getBuffers, setUsernameResolver } from './discord-vad.js'
+import { onPcmChunk, init as initVad, getBuffers, setUsernameResolver, getAudioOutStats } from './discord-vad.js'
 
 let discordClient = null
 let isConnected = false
@@ -193,6 +193,7 @@ function getDebugState() {
     messageCount,
     processingQueue,
     activeListeners: [...getBuffers().keys()],
+    audioOut: getAudioOutStats(),
   }
 }
 
