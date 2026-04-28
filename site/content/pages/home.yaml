@@ -1,0 +1,25 @@
+id: home
+title: Home
+hero:
+  heading: "dialog-generator"
+  subheading: "TTS + facial animation for VRM"
+  body: "speak through a VRM avatar — text-to-speech plus driven facial animation server."
+  badges:
+    - { label: "tts" }
+    - { label: "vrm" }
+    - { label: "animation" }
+    - { label: "voice" }
+  ctas:
+    - { label: "GitHub", href: "https://github.com/AnEntrypoint/dialog-generator", primary: true }
+    - { label: "247420", href: "https://247420.xyz" }
+features:
+  heading: "Why dialog-generator"
+  items:
+    - { name: "tts", desc: "flagship trait of dialog-generator." }
+    - { name: "vrm", desc: "core capability of dialog-generator." }
+    - { name: "animation", desc: "core capability of dialog-generator." }
+quickstart:
+  heading: Quick start
+  lines:
+    - { kind: "cmt", text: "# source" }
+    - { kind: "cmd", text: "git clone https://github.com/AnEntrypoint/dialog-generator.git" }

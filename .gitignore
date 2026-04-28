@@ -48,3 +48,5 @@ target/
 **/*.rs.bk
 Cargo.lock.bak
 .plugkit-agent-worktree/
+dist/
+.codeinsight/

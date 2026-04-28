@@ -1,0 +1,17 @@
+title: "dialog-generator"
+tagline: "TTS + facial animation for VRM"
+description: "speak through a VRM avatar — text-to-speech plus driven facial animation server."
+repo: "https://github.com/AnEntrypoint/dialog-generator"
+url: "https://anentrypoint.github.io/dialog-generator"
+year: 2026
+keywords:
+  - "tts"
+  - "vrm"
+  - "animation"
+  - "247420"
+  - "anentrypoint"
+accent_from: "#f97583"
+accent_to: "#ffa657"
+glyph: "◑"
+code: "033"
+category: "voice"
