@@ -88,10 +88,24 @@ let speakerEmbeddings = null
 let speakerSource = null
 let loadPromise = null
 
+function cleanStaleCacheTmps() {
+  const cacheDir = path.resolve('node_modules/@huggingface/transformers/.cache/ResembleAI/chatterbox-turbo-ONNX/onnx')
+  if (!fs.existsSync(cacheDir)) return
+  const myPid = String(process.pid)
+  let removed = 0
+  for (const f of fs.readdirSync(cacheDir)) {
+    const m = f.match(/\.tmp\.(\d+)\./)
+    if (!m || m[1] === myPid) continue
+    try { fs.unlinkSync(path.join(cacheDir, f)); removed++ } catch {}
+  }
+  if (removed) console.log(`[chatterbox] cleared ${removed} stale tmp file(s) from prior interrupted downloads`)
+}
+
 async function ensureModel() {
   if (model && processor) return
   if (loadPromise) return loadPromise
   loadPromise = (async () => {
+    cleanStaleCacheTmps()
     console.log('[chatterbox] loading ChatterboxModel (ResembleAI/chatterbox-turbo-ONNX)...')
     processor = await AutoProcessor.from_pretrained('ResembleAI/chatterbox-turbo-ONNX')
     model = await ChatterboxModel.from_pretrained('ResembleAI/chatterbox-turbo-ONNX', {
@@ -106,6 +120,7 @@ function ensureProcessorOnly() {
   if (processor) return Promise.resolve()
   if (!loadPromise) {
     loadPromise = (async () => {
+      cleanStaleCacheTmps()
       console.log('[chatterbox] loading processor + model (cache miss)...')
       processor = await AutoProcessor.from_pretrained('ResembleAI/chatterbox-turbo-ONNX')
       model = await ChatterboxModel.from_pretrained('ResembleAI/chatterbox-turbo-ONNX', {
